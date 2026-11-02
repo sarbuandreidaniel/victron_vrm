@@ -37,6 +37,8 @@ type: custom:victron-vrm-card
 view: zi          # zi | saptamana | luna | an
 ```
 
+Fiecare grafic are în colț două butoane: **⇔** îl întinde pe ambele coloane (alegerea se ține minte în browser; pe mobil totul e deja pe o coloană) și **⛶** îl deschide pe tot ecranul (închidere cu ✕ sau Esc).
+
 Câte un card pe view, cu căile `zi`, `saptamana`, `luna`, `an`. Apăsarea pe o zi (în Săptămână/Lună) sau pe o lună (în An) deschide vederea mai detaliată; data aleasă se păstrează în URL (`?d=2026-03-14`). Dacă view-urile au alte căi, setează-le în card:
 
 ```yaml

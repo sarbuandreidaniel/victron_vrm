@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
   grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
 // fiecare flux are aceeași culoare în toate graficele
@@ -14,6 +14,16 @@ const ZILE_S = ['dum.', 'lun.', 'mar.', 'mie.', 'joi', 'vin.', 'sâm.'];
 const LUNI = ['ian.', 'feb.', 'mar.', 'apr.', 'mai', 'iun.', 'iul.', 'aug.', 'sept.', 'oct.', 'nov.', 'dec.'];
 const LUNI_L = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'];
 const VIEWS = ['zi', 'saptamana', 'luna', 'an'];
+// pictograme MDI: arrow-expand-horizontal, arrow-collapse-horizontal, fullscreen, close
+const ICON = { wide: 'M9,11H15V8L19,12L15,16V13H9V16L5,12L9,8V11M2,20V4H4V20H2M20,20V4H22V20H20Z',
+  narrow: 'M13,20V4H15.03V20H13M10,20V4H12.03V20H10M5,8L9.03,12L5,16V13H2V11H5V8M20,16L16,12L20,8V11H23V13H20V16Z',
+  full: 'M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z',
+  close: 'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z' };
+const svgI = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+// graficele lățite se țin minte în browser (preferință per vizitator)
+const WIDE_KEY = 'victron-vrm-wide';
+const loadWide = () => { try { return new Set(JSON.parse(localStorage.getItem(WIDE_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveWide = (set) => { try { localStorage.setItem(WIDE_KEY, JSON.stringify([...set])); } catch (e) { /* stocare indisponibilă */ } };
 const nf = (d) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: d, maximumFractionDigits: d });
 const F0 = nf(0).format, F1 = nf(1).format;
 const kwh = (v) => (v >= 100 ? F0(v) : F1(v));
@@ -150,6 +160,16 @@ tr.go:hover td{background:rgba(255,255,255,.04)}
 tr.sel td{background:rgba(57,135,229,.14)}
 tr.sel td:first-child{box-shadow:inset 3px 0 0 ${C.sel}}
 tr.nil td{color:${C.muted}}
+.box.wide{grid-column:1/-1}
+.hd{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.tools{display:flex;gap:6px;flex-shrink:0}
+.tb{background:transparent;border:1px solid ${C.border};border-radius:6px;width:30px;height:30px;padding:0;color:${C.muted};cursor:pointer;display:grid;place-items:center}
+.tb:hover{color:${C.fg};background:#2a2a2a}
+.tb svg{width:18px;height:18px;fill:currentColor}
+.fs{position:fixed;inset:0;z-index:2147483000;background:${C.page};color:${C.fg};font-family:Roboto,Helvetica,system-ui,sans-serif;display:flex;flex-direction:column;box-sizing:border-box;
+  padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
+.fs .ttl{font-size:17px}
+.fs .ch{flex:1 1 auto;min-height:0}
 .hm{display:none}
 .msg{color:${C.muted};font-size:14px;padding:30px;text-align:center}
 .foot{color:${C.muted};font-size:12px;text-align:right}
@@ -177,7 +197,7 @@ class VictronVrmCard extends HTMLElement {
     this._timer = setInterval(() => this._load(true), 5 * 60 * 1000);
     this._load();
   }
-  disconnectedCallback() { clearInterval(this._timer); }
+  disconnectedCallback() { clearInterval(this._timer); this._closeFs(); }
   set hass(h) { const first = !this._hass; this._hass = h; if (first && this._d) this._load(); }
 
   // ── perioada afișată ───────────────────────────────────────────────
@@ -200,6 +220,7 @@ class VictronVrmCard extends HTMLElement {
     history.replaceState(history.state, '', u.pathname + u.search + u.hash);
   }
   _go(view, d) {
+    this._closeFs();
     const parts = location.pathname.split('/').filter(Boolean);
     const base = parts.length > 1 ? '/' + parts.slice(0, -1).join('/') : '/' + (parts[0] || 'lovelace');
     history.pushState(null, '', `${base}/${this._cfg.paths[view]}?d=${iso(d)}`);
@@ -299,8 +320,8 @@ class VictronVrmCard extends HTMLElement {
       const go = drill && r.any ? ` class="go" data-i="${rows.indexOf(r)}"` : r.any ? '' : ' class="nil"';
       return `<tr${go}><td>${lbl}</td>${cols(r)}</tr>`;
     }).join('');
-    const legend = (c) => `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${kwh(tot.v[k])}</b></span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b></span>` : ''}</div>`;
-    const box = (c) => `<div class="box"><div class="ttl">${c.ttl}</div><div class="note">${c.note} · kWh</div>${legend(c)}<div class="ch" id="${c.id}"></div></div>`;
+    this._tot = tot; this._wide = this._wide || loadWide();
+    const box = (c) => this._box(c);
 
     w.innerHTML = nav + `
 <div class="kpis">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.house), 'kWh', hasEv ? 'fără mașină' + (v === 'zi' ? '' : ' · ' + avg(tot.house)) : avg(tot.house))}${hasEv ? kpi('Stația de încărcare', kwh(tot.ev), 'kWh', `${share(tot.v.Pe + tot.v.Be, tot.ev)} din solar + baterie`) : ''}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
@@ -312,7 +333,9 @@ ${this._yearsTable()}${this._foot()}`;
     w.querySelector('.take').innerHTML = take;
     w.querySelectorAll('tbody tr.go').forEach((tr) => tr.addEventListener('click', () => this._go(drill, rows[+tr.dataset.i].d || parse(rows[+tr.dataset.i].k))));
     this._wire(w);
-    this._cw = null; this._charts();
+    w.querySelectorAll('.wb').forEach((b) => b.addEventListener('click', () => this._toggleWide(b)));
+    w.querySelectorAll('.fb').forEach((b) => b.addEventListener('click', () => this._openFs(CHARTS.find((c) => c.id === b.dataset.c))));
+    this._cws = {}; this._charts();
   }
   _yearsTable() {
     if (this._cfg.view !== 'an' || !this._years || !this._years.length) return '';
@@ -334,36 +357,101 @@ ${this._yearsTable()}${this._foot()}`;
     w.querySelector('.now').addEventListener('click', () => { this._d = today(); this._sync(); this._load(); });
     w.querySelectorAll('tbody.yrs tr').forEach((tr) => tr.addEventListener('click', () => { this._d = new Date(+tr.dataset.y, 0, 1); this._sync(); this._load(); }));
   }
+  _legend(c) {
+    const tot = this._tot;
+    return `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${kwh(tot.v[k])}</b></span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b></span>` : ''}</div>`;
+  }
+  _box(c) {
+    const wide = this._wide.has(c.id), lbl = wide ? 'Lățime normală' : 'Lățime dublă';
+    return `<div class="box${wide ? ' wide' : ''}"><div class="hd"><div><div class="ttl">${c.ttl}</div><div class="note">${c.note} · kWh</div></div>
+      <div class="tools"><button class="tb wb hn" data-c="${c.id}" title="${lbl}" aria-label="${lbl}">${svgI(wide ? ICON.narrow : ICON.wide)}</button>
+      <button class="tb fb" data-c="${c.id}" title="Ecran complet" aria-label="Ecran complet">${svgI(ICON.full)}</button></div></div>
+      ${this._legend(c)}<div class="ch" id="${c.id}"></div></div>`;
+  }
+  _toggleWide(btn) {
+    const id = btn.dataset.c, on = !this._wide.has(id), lbl = on ? 'Lățime normală' : 'Lățime dublă';
+    if (on) this._wide.add(id); else this._wide.delete(id);
+    saveWide(this._wide);
+    btn.closest('.box').classList.toggle('wide', on);
+    btn.innerHTML = svgI(on ? ICON.narrow : ICON.wide); btn.title = lbl; btn.setAttribute('aria-label', lbl);
+    this._charts();
+  }
+  // redesenează doar graficele a căror lățime s-a schimbat
   _charts() {
     const root = this.shadowRoot; if (!root || !this._rows) return;
-    const first = root.getElementById('cs'); if (!first) return;
-    const cw = first.clientWidth; if (!cw || cw === this._cw) return; this._cw = cw;
-    const v = this._cfg.view, rows = this._rows;
-    const label = (r) => r.label;
-    const maxBar = { zi: 18, saptamana: 40, luna: 16, an: 36 }[v];
-    const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
+    this._cws = this._cws || {};
     for (const c of CHARTS) {
       const el = root.getElementById(c.id);
       if (!el) continue;
-      const svg = barChart(el.clientWidth, 220, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : 34, click: !!drill });
-      el.innerHTML = svg + '<div class="tip" hidden></div>';
-      const tip = el.querySelector('.tip'), hl = el.querySelector('.hl');
-      el.querySelectorAll('.hit').forEach((hit) => {
-        const r = rows[+hit.dataset.i];
-        hit.addEventListener('mousemove', (ev) => {
-          hl.setAttribute('x', hit.getAttribute('x')); hl.setAttribute('width', hit.getAttribute('width')); hl.setAttribute('opacity', '0.06');
-          const lines = [...c.up, ...(c.down || [])].map((k) => `<div><i style="background:${FLOW[k]}"></i>${c.names[k]}: ${F1(r.v[k])} kWh</div>`).join('')
-            + (c.line ? `<div><i style="background:${C.fg}"></i>Producție: ${F1(r.prod)} kWh</div>` : '');
-          tip.innerHTML = `<div class="d">${esc(r.tip)}</div>${lines}`;
-          tip.hidden = false;
-          const b = el.getBoundingClientRect(), x = ev.clientX - b.left, y = ev.clientY - b.top;
-          tip.style.left = Math.max(0, Math.min(b.width - tip.offsetWidth, x + 12)) + 'px';
-          tip.style.top = Math.max(0, y - tip.offsetHeight - 8) + 'px';
-        });
-        hit.addEventListener('mouseleave', () => { tip.hidden = true; hl.setAttribute('opacity', '0'); });
-        if (drill && r.any) hit.addEventListener('click', () => this._go(drill, r.d || parse(r.k)));
-      });
+      const W = el.clientWidth;
+      if (!W || this._cws[c.id] === W) continue;
+      this._cws[c.id] = W;
+      this._draw(el, c, W, 220);
     }
+  }
+  _draw(el, c, W, H) {
+    const v = this._cfg.view, rows = this._rows;
+    const label = (r) => r.label;
+    // barele cresc odată cu graficul (lățime dublă / ecran complet), până la 2,5×
+    const maxBar = Math.round({ zi: 18, saptamana: 40, luna: 16, an: 36 }[v] * Math.min(2.5, Math.max(1, W / 640)));
+    const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
+    const svg = barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : 34, click: !!drill });
+    el.innerHTML = svg + '<div class="tip" hidden></div>';
+    const tip = el.querySelector('.tip'), hl = el.querySelector('.hl');
+    el.querySelectorAll('.hit').forEach((hit) => {
+      const r = rows[+hit.dataset.i];
+      hit.addEventListener('mousemove', (ev) => {
+        hl.setAttribute('x', hit.getAttribute('x')); hl.setAttribute('width', hit.getAttribute('width')); hl.setAttribute('opacity', '0.06');
+        const lines = [...c.up, ...(c.down || [])].map((k) => `<div><i style="background:${FLOW[k]}"></i>${c.names[k]}: ${F1(r.v[k])} kWh</div>`).join('')
+          + (c.line ? `<div><i style="background:${C.fg}"></i>Producție: ${F1(r.prod)} kWh</div>` : '');
+        tip.innerHTML = `<div class="d">${esc(r.tip)}</div>${lines}`;
+        tip.hidden = false;
+        const b = el.getBoundingClientRect(), x = ev.clientX - b.left, y = ev.clientY - b.top;
+        tip.style.left = Math.max(0, Math.min(b.width - tip.offsetWidth, x + 12)) + 'px';
+        tip.style.top = Math.max(0, y - tip.offsetHeight - 8) + 'px';
+      });
+      hit.addEventListener('mouseleave', () => { tip.hidden = true; hl.setAttribute('opacity', '0'); });
+      if (drill && r.any) hit.addEventListener('click', () => this._go(drill, r.d || parse(r.k)));
+    });
+  }
+
+  // ── ecran complet: un strat peste toată pagina, în afara cardului ───
+  // (pe iPhone nu există Fullscreen API pentru elemente, așa că stratul acoperă oricum ecranul)
+  _openFs(c) {
+    if (!c || !this._rows) return;
+    this._closeFs();
+    const host = document.createElement('div');
+    const sr = host.attachShadow({ mode: 'open' });
+    sr.innerHTML = `<style>${CSS}</style><div class="fs"><div class="hd"><div><div class="ttl">${c.ttl} · ${esc(this._title())}</div><div class="note">${c.note} · kWh</div></div>
+      <div class="tools"><button class="tb xb" title="Închide" aria-label="Închide">${svgI(ICON.close)}</button></div></div>${this._legend(c)}<div class="ch"></div></div>`;
+    document.body.appendChild(host);
+    const el = sr.querySelector('.ch');
+    const draw = () => { if (el.clientWidth) this._draw(el, c, el.clientWidth, Math.max(200, el.clientHeight)); };
+    const onKey = (e) => { if (e.key === 'Escape') this._closeFs(); };
+    const onFs = () => { if (this._fs && this._fs.native && !document.fullscreenElement) this._closeFs(); };
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', draw);
+    document.addEventListener('fullscreenchange', onFs);
+    this._fs = { host, native: false, cleanup: () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', draw);
+      document.removeEventListener('fullscreenchange', onFs);
+      document.body.style.overflow = overflow;
+    } };
+    sr.querySelector('.xb').addEventListener('click', () => this._closeFs());
+    if (document.fullscreenEnabled && host.requestFullscreen) {
+      host.requestFullscreen().then(() => { if (this._fs && this._fs.host === host) this._fs.native = true; }).catch(() => {});
+    }
+    requestAnimationFrame(draw);
+  }
+  _closeFs() {
+    const f = this._fs; if (!f) return;
+    this._fs = null;
+    f.cleanup();
+    if (document.fullscreenElement === f.host) document.exitFullscreen().catch(() => {});
+    f.host.remove();
   }
 }
 if (!customElements.get('victron-vrm-card')) customElements.define('victron-vrm-card', VictronVrmCard);
