@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
   grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
 // fiecare flux are aceeași culoare în toate graficele
@@ -103,8 +103,9 @@ const CSS = `
 :host{display:block}
 .w{max-width:1404px;margin:0 auto;font-family:Roboto,Helvetica,system-ui,sans-serif;color:${C.fg};background:${C.page};border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .box{background:${C.panel};border:1px solid ${C.border};border-radius:6px;padding:16px;position:relative}
-.nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.nav .t{font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:400;flex:1;min-width:200px}
+.nav{display:flex;align-items:center;gap:8px}
+.nav .t{font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:400;flex:1;min-width:0}
+.nav .bt{display:flex;gap:8px;flex-shrink:0}
 .nav button{background:transparent;color:${C.fg};border:1px solid ${C.border};border-radius:6px;height:34px;min-width:34px;padding:0 10px;font:inherit;font-size:14px;cursor:pointer}
 .nav button:hover:not(:disabled){background:#2a2a2a}
 .nav button:disabled{opacity:.35;cursor:default}
@@ -256,8 +257,8 @@ class VictronVrmCard extends HTMLElement {
     const w = root.querySelector('.w');
     const v = this._cfg.view, t = today(), { from, to } = this._range();
     const nav = `<div class="box"><div class="nav"><div class="t">${esc(this._title())}</div>
-      <button class="prev" aria-label="Înapoi">‹</button><button class="now">${v === 'zi' ? 'Azi' : 'Acum'}</button>
-      <button class="next" aria-label="Înainte"${to >= t ? ' disabled' : ''}>›</button></div>${this._err ? '' : '<div class="take"></div>'}</div>`;
+      <div class="bt"><button class="prev" aria-label="Înapoi">‹</button><button class="now">${v === 'zi' ? 'Azi' : 'Acum'}</button>
+      <button class="next" aria-label="Înainte"${to >= t ? ' disabled' : ''}>›</button></div></div>${this._err ? '' : '<div class="take"></div>'}</div>`;
     if (this._err) {
       w.innerHTML = nav + `<div class="box msg">Nu am putut citi istoricul VRM: ${esc(this._err)}</div>`;
       return this._wire(w);
