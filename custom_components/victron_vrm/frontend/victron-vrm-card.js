@@ -1,10 +1,14 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.1.1';
+const VERSION = '0.2.0';
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
   grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
 // fiecare flux are aceeași culoare în toate graficele
-const FLOW = { Pc: '#199e70', Pb: '#c98500', Pg: '#9085e9', Bc: '#3987e5', Bg: '#d55181', Gc: '#d03b3b', Gb: '#3fae3f' };
+const FLOW = { Pc: '#199e70', Pb: '#c98500', Pg: '#9085e9', Bc: '#3987e5', Bg: '#d55181', Gc: '#d03b3b', Gb: '#3fae3f',
+  Pe: '#199e70', Be: '#3987e5', Ge: '#d03b3b' };
+// consumul casei fără mașină (hPc = solar direct în casă etc.) păstrează culoarea sursei
+FLOW.hPc = FLOW.Pc; FLOW.hBc = FLOW.Bc; FLOW.hGc = FLOW.Gc;
+const BASE = ['Pc', 'Pb', 'Pg', 'Bc', 'Bg', 'Gc', 'Gb', 'Pe', 'Be', 'Ge'];
 const ZILE = ['duminică', 'luni', 'marți', 'miercuri', 'joi', 'vineri', 'sâmbătă'];
 const ZILE_S = ['dum.', 'lun.', 'mar.', 'mie.', 'joi', 'vin.', 'sâm.'];
 const LUNI = ['ian.', 'feb.', 'mar.', 'apr.', 'mai', 'iun.', 'iul.', 'aug.', 'sept.', 'oct.', 'nov.', 'dec.'];
@@ -25,23 +29,26 @@ const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.g
 
 // un rând = valorile brute VRM + mărimile derivate
 function mk(k, vals, codes) {
-  const v = {};
+  const v = Object.fromEntries(BASE.map((c) => [c, 0]));
   codes.forEach((c, i) => { v[c] = Math.max(0, Number(vals ? vals[i] : 0) || 0); });
   return derive({ k, v });
 }
+// Pe/Be/Ge (spre mașină) fac parte din Pc/Bc/Gc: stația e un consumator pe ieșirea AC
 function derive(r) {
   const v = r.v;
+  v.hPc = Math.max(0, v.Pc - v.Pe); v.hBc = Math.max(0, v.Bc - v.Be); v.hGc = Math.max(0, v.Gc - v.Ge);
   r.prod = v.Pc + v.Pb + v.Pg; r.cons = v.Pc + v.Bc + v.Gc;
+  r.ev = v.Pe + v.Be + v.Ge; r.house = v.hPc + v.hBc + v.hGc;
   r.imp = v.Gc + v.Gb; r.inj = v.Pg + v.Bg;
   r.chg = v.Pb + v.Gb; r.dis = v.Bc + v.Bg;
   r.indep = r.cons > 0 ? (v.Pc + v.Bc) / r.cons : NaN;
   r.autoc = r.prod > 0 ? (v.Pc + v.Pb) / r.prod : NaN;
-  r.any = Object.values(v).some((x) => x > 0);
+  r.any = BASE.some((c) => v[c] > 0);
   return r;
 }
 function sum(rows, k = 'p') {
-  const v = { Pc: 0, Pb: 0, Pg: 0, Bc: 0, Bg: 0, Gc: 0, Gb: 0 };
-  for (const r of rows) for (const c in v) v[c] += r.v[c];
+  const v = Object.fromEntries(BASE.map((c) => [c, 0]));
+  for (const r of rows) for (const c of BASE) v[c] += r.v[c];
   return derive({ k, v });
 }
 
@@ -89,14 +96,16 @@ function barChart(W, H, rows, o) {
 }
 
 const CHARTS = [
-  { id: 'cs', ttl: 'Consum după sursă', note: 'De unde a venit energia folosită în casă; linia arată producția', up: ['Pc', 'Bc', 'Gc'], line: 'prod',
-    names: { Pc: 'Solar direct', Bc: 'Din baterie', Gc: 'Din rețea' } },
+  { id: 'cs', ttl: 'Consum casă după sursă', note: 'De unde a venit energia folosită în casă, fără mașină; linia arată producția', up: ['hPc', 'hBc', 'hGc'], line: 'prod',
+    names: { hPc: 'Solar direct', hBc: 'Din baterie', hGc: 'Din rețea' } },
+  { id: 'ce', ttl: 'Stația de încărcare', note: 'Energia primită de mașină, după sursă', up: ['Pe', 'Be', 'Ge'], ev: true,
+    names: { Pe: 'Din solar', Be: 'Din baterie', Ge: 'Din rețea' } },
   { id: 'cp', ttl: 'Unde a mers producția', note: 'Energia produsă de panouri, după destinație', up: ['Pc', 'Pb', 'Pg'],
-    names: { Pc: 'În casă', Pb: 'În baterie', Pg: 'În rețea' } },
+    names: { Pc: 'Consumată direct', Pb: 'În baterie', Pg: 'În rețea' } },
   { id: 'cb', ttl: 'Baterie', note: 'În sus încărcare, în jos descărcare', up: ['Pb', 'Gb'], down: ['Bc', 'Bg'],
-    names: { Pb: 'Încărcare din solar', Gb: 'Încărcare din rețea', Bc: 'Descărcare în casă', Bg: 'Descărcare în rețea' } },
+    names: { Pb: 'Încărcare din solar', Gb: 'Încărcare din rețea', Bc: 'Descărcare spre consum', Bg: 'Descărcare în rețea' } },
   { id: 'cg', ttl: 'Rețea', note: 'În sus import, în jos injecție', up: ['Gc', 'Gb'], down: ['Pg', 'Bg'],
-    names: { Gc: 'Import pentru casă', Gb: 'Import pentru baterie', Pg: 'Injecție din solar', Bg: 'Injecție din baterie' } },
+    names: { Gc: 'Import pentru consum', Gb: 'Import pentru baterie', Pg: 'Injecție din solar', Bg: 'Injecție din baterie' } },
 ];
 
 const CSS = `
@@ -115,7 +124,7 @@ h2{font-size:17px;font-weight:500;margin:10px 0 0;color:${C.fg}}
 h2 small{font-weight:400;color:${C.muted};font-size:13px;margin-left:8px}
 .ttl{color:${C.fg};font-size:15px;font-weight:500;margin:0 0 4px}
 .note{color:${C.muted};font-size:12px;margin:0 0 10px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px}
 .kpi .l{color:${C.muted};font-size:12px}
 .kpi .v{font-family:Georgia,'Times New Roman',serif;font-size:28px;font-weight:400;margin-top:6px;font-variant-numeric:tabular-nums}
 .kpi .u{font-family:Roboto,Helvetica,system-ui,sans-serif;color:${C.muted};font-size:12px;margin-left:4px}
@@ -276,12 +285,14 @@ class VictronVrmCard extends HTMLElement {
     const kpi = (l, val, u, s = '') => `<div class="box kpi"><div class="l">${l}</div><div class="v">${val}<span class="u">${u}</span></div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
     const share = (x, of) => (of > 0 ? pct(x / of) : '—');
     const per = { zi: 'în această zi', saptamana: 'în această săptămână', luna: 'în această lună', an: `în ${from.getFullYear()}` }[v];
-    const take = `${cap(per)}, casa a consumat <b>${kwh(tot.cons)} kWh</b>: <b>${share(tot.v.Pc, tot.cons)}</b> direct din solar, <b>${share(tot.v.Bc, tot.cons)}</b> din baterie și <b>${share(tot.v.Gc, tot.cons)}</b> din rețea. `
-      + `Panourile au produs <b>${kwh(tot.prod)} kWh</b>, din care <b>${share(tot.v.Pc, tot.prod)}</b> au mers în casă, <b>${share(tot.v.Pb, tot.prod)}</b> în baterie și <b>${share(tot.v.Pg, tot.prod)}</b> în rețea.`;
+    const hasEv = tot.ev > 0;
+    const take = `${cap(per)}, casa a consumat <b>${kwh(tot.house)} kWh</b>: <b>${share(tot.v.hPc, tot.house)}</b> direct din solar, <b>${share(tot.v.hBc, tot.house)}</b> din baterie și <b>${share(tot.v.hGc, tot.house)}</b> din rețea. `
+      + (hasEv ? `Mașina a primit <b>${kwh(tot.ev)} kWh</b>: <b>${share(tot.v.Pe, tot.ev)}</b> din solar, <b>${share(tot.v.Be, tot.ev)}</b> din baterie și <b>${share(tot.v.Ge, tot.ev)}</b> din rețea. ` : '')
+      + `Panourile au produs <b>${kwh(tot.prod)} kWh</b>, din care <b>${share(tot.v.Pc, tot.prod)}</b> au fost consumate direct, <b>${share(tot.v.Pb, tot.prod)}</b> în baterie și <b>${share(tot.v.Pg, tot.prod)}</b> în rețea.`;
 
     const first = { zi: 'Ora', saptamana: 'Ziua', luna: 'Ziua', an: 'Luna' }[v];
-    const cols = (r) => `<td>${kwh(r.prod)}</td><td>${kwh(r.cons)}</td><td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td>`;
-    const head = (f) => `<thead><tr><th>${f}</th><th>Producție</th><th>Consum</th><th>Import</th><th>Injecție</th><th class="hn">Încărcare</th><th class="hn">Descărcare</th><th><span class="hn">Independență</span><span class="hm">Indep.</span></th><th class="hn">Autoconsum</th></tr></thead>`;
+    const cols = (r) => `<td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td>`;
+    const head = (f) => `<thead><tr><th>${f}</th><th>Producție</th><th>Casă</th>${hasEv ? '<th>Mașină</th>' : ''}<th>Import</th><th>Injecție</th><th class="hn">Încărcare</th><th class="hn">Descărcare</th><th><span class="hn">Independență</span><span class="hm">Indep.</span></th><th class="hn">Autoconsum</th></tr></thead>`;
     const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
     const body = rows.filter((r) => r.any || (v !== 'an' && !r.future)).map((r) => {
       const lbl = v === 'zi' ? `${r.label}:00` : v === 'an' ? cap(LUNI_L[+r.k - 1]) : `<span class="hn">${esc(r.tip)}</span><span class="hm">${esc(r.label)}</span>`;
@@ -292,9 +303,9 @@ class VictronVrmCard extends HTMLElement {
     const box = (c) => `<div class="box"><div class="ttl">${c.ttl}</div><div class="note">${c.note} · kWh</div>${legend(c)}<div class="ch" id="${c.id}"></div></div>`;
 
     w.innerHTML = nav + `
-<div class="kpis">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.cons), 'kWh', avg(tot.cons))}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
+<div class="kpis">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.house), 'kWh', hasEv ? 'fără mașină' + (v === 'zi' ? '' : ' · ' + avg(tot.house)) : avg(tot.house))}${hasEv ? kpi('Stația de încărcare', kwh(tot.ev), 'kWh', `${share(tot.v.Pe + tot.v.Be, tot.ev)} din solar + baterie`) : ''}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
 ${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${kpi('Independență', pct(tot.indep), '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pct(tot.autoc), '', 'producție folosită în casă sau baterie')}</div>
-<div class="charts">${CHARTS.map(box).join('')}</div>
+<div class="charts">${CHARTS.filter((c) => !c.ev || hasEv).map(box).join('')}</div>
 <div class="box"><div class="ttl">${{ zi: 'Pe ore', saptamana: 'Pe zile', luna: 'Pe zile', an: 'Pe luni' }[v]}</div><div class="note">kWh${drill ? ' · apasă pe un rând pentru detalii' : ''}</div>
  <div class="tw"><table>${head(first)}<tbody>${body}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
 ${this._yearsTable()}${this._foot()}`;
@@ -305,9 +316,9 @@ ${this._yearsTable()}${this._foot()}`;
   }
   _yearsTable() {
     if (this._cfg.view !== 'an' || !this._years || !this._years.length) return '';
-    const y = String(this._d.getFullYear());
-    const rows = this._years.map((r) => `<tr class="go${r.k === y ? ' sel' : ''}" data-y="${r.k}"><td>${r.k}${r.k === String(today().getFullYear()) ? ' <span class="hn" style="color:' + C.muted + '">(în curs)</span>' : ''}</td><td>${kwh(r.prod)}</td><td>${kwh(r.cons)}</td><td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td></tr>`).join('');
-    return `<h2>Pe ani<small>apasă pe un an pentru lunile lui</small></h2><div class="box"><div class="tw"><table><thead><tr><th>An</th><th>Producție</th><th>Consum</th><th>Import</th><th>Injecție</th><th class="hn">Încărcare</th><th class="hn">Descărcare</th><th><span class="hn">Independență</span><span class="hm">Indep.</span></th><th class="hn">Autoconsum</th></tr></thead><tbody class="yrs">${rows}</tbody></table></div></div>`;
+    const y = String(this._d.getFullYear()), hasEv = this._years.some((r) => r.ev > 0);
+    const rows = this._years.map((r) => `<tr class="go${r.k === y ? ' sel' : ''}" data-y="${r.k}"><td>${r.k}${r.k === String(today().getFullYear()) ? ' <span class="hn" style="color:' + C.muted + '">(în curs)</span>' : ''}</td><td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td></tr>`).join('');
+    return `<h2>Pe ani<small>apasă pe un an pentru lunile lui</small></h2><div class="box"><div class="tw"><table><thead><tr><th>An</th><th>Producție</th><th>Casă</th>${hasEv ? '<th>Mașină</th>' : ''}<th>Import</th><th>Injecție</th><th class="hn">Încărcare</th><th class="hn">Descărcare</th><th><span class="hn">Independență</span><span class="hm">Indep.</span></th><th class="hn">Autoconsum</th></tr></thead><tbody class="yrs">${rows}</tbody></table></div></div>`;
   }
   _foot() {
     const i = this._info; if (!i) return '';
@@ -333,6 +344,7 @@ ${this._yearsTable()}${this._foot()}`;
     const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
     for (const c of CHARTS) {
       const el = root.getElementById(c.id);
+      if (!el) continue;
       const svg = barChart(el.clientWidth, 220, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : 34, click: !!drill });
       el.innerHTML = svg + '<div class="tip" hidden></div>';
       const tip = el.querySelector('.tip'), hl = el.querySelector('.hl');

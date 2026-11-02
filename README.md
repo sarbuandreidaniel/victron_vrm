@@ -11,15 +11,16 @@ Descarcă istoricul de energie al unei instalații Victron din **VRM** (pe ore),
 - **O singură descărcare pe lună de istoric.** La prima pornire integrarea ia din VRM, lună cu lună, tot istoricul de la data de început (implicit ziua în care instalația a fost adăugată în VRM). O lună încheiată de peste 2 zile este marcată finală și nu mai este cerută niciodată.
 - **Actualizare la 15 minute** pentru ieri și azi.
 - **Stocare locală** în `.storage/victron_vrm.<entry_id>`, grupată pe ani → luni → zile → ore. Cardul citește doar din acest cache (prin websocket), deci schimbarea vederilor nu face cereri către VRM.
-- **Fluxurile VRM** (`type=kwh`) sunt păstrate exact:
+- **Fluxurile VRM** (`type=custom`, pe ore) sunt păstrate exact:
 
 | Cod | Flux |
 |---|---|
 | `Pc` / `Pb` / `Pg` | solar → casă / baterie / rețea |
 | `Bc` / `Bg` | baterie → casă / rețea |
 | `Gc` / `Gb` | rețea → casă / baterie |
+| `Pe` / `Be` / `Ge` | solar / baterie / rețea → stația de încărcare (mașina) |
 
-Din ele cardul calculează producția, consumul, importul, injecția, încărcarea, descărcarea, independența și autoconsumul.
+Stația de încărcare stă pe ieșirea AC, deci `Pe`/`Be`/`Ge` sunt o parte din `Pc`/`Bc`/`Gc`: cardul arată consumul casei fără mașină și, separat, energia primită de mașină, după sursă. Din fluxuri cardul calculează producția, consumul, importul, injecția, încărcarea, descărcarea, independența și autoconsumul.
 
 ## Instalare
 

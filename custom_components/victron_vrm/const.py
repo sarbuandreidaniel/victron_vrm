@@ -10,12 +10,15 @@ CONF_HISTORY_START = "history_start"
 
 API_BASE = "https://vrmapi.victronenergy.com/v2"
 
-# Energy flows returned by /stats?type=kwh. Every stored bucket is a list of
-# kWh values in this exact order.
+# Energy flows requested from /stats?type=custom. Every stored bucket is a list
+# of kWh values in this exact order; new codes are only ever appended.
 #   Pc solar → consumers   Pb solar → battery   Pg solar → grid
 #   Bc battery → consumers Bg battery → grid
 #   Gc grid → consumers    Gb grid → battery
-CODES = ("Pc", "Pb", "Pg", "Bc", "Bg", "Gc", "Gb")
+#   Pe solar → EV          Be battery → EV      Ge grid → EV
+# The EV flows are a part of Pc / Bc / Gc (the charger is a consumer on the
+# AC output), not extra energy on top of them.
+CODES = ("Pc", "Pb", "Pg", "Bc", "Bg", "Gc", "Gb", "Pe", "Be", "Ge")
 
 UPDATE_INTERVAL = timedelta(minutes=15)
 # A month is re-fetched once this long after it ends, then never again.

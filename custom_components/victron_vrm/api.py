@@ -30,7 +30,9 @@ class VrmApi:
         self._session = session
         self._headers = {"X-Authorization": f"Token {token}"}
 
-    async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def _get(
+        self, path: str, params: dict[str, Any] | list[tuple[str, Any]] | None = None
+    ) -> dict[str, Any]:
         url = f"{API_BASE}{path}"
         for attempt in range(3):
             try:
@@ -71,11 +73,13 @@ class VrmApi:
         """Return hourly kWh per flow code between two unix timestamps.
 
         Each value is a list of [timestamp_ms, kwh] pairs. A code VRM has no
-        data for comes back as `false`; it is returned as an empty list.
+        data for (e.g. the EV flows before a charger was installed) comes back
+        as `false`; it is returned as an empty list.
         """
         data = await self._get(
             f"/installations/{site_id}/stats",
-            {"type": "kwh", "interval": "hours", "start": start, "end": end},
+            [("type", "custom"), ("interval", "hours"), ("start", start), ("end", end)]
+            + [("attributeCodes[]", code) for code in CODES],
         )
         records = data.get("records") or {}
         if not isinstance(records, dict):

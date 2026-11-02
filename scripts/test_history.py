@@ -61,6 +61,22 @@ def test_dst():
     assert abs(b[date(2026, 10, 25)][3][CODES.index("Gc")] - 1.0) < 1e-9
 
 
+def test_widen_old_cache():
+    """A cache written with the original 7 codes is padded and fully re-fetched."""
+    from victron_vrm.history import VrmHistory
+
+    h = VrmHistory.__new__(VrmHistory)
+    h._store = type("S", (), {"async_delay_save": lambda self, f, d: None})()
+    old = [1.0] * 7
+    h.data = {"years": {"2025": {"t": old, "m": {"11": {"t": old, "d": {"01": {"t": old, "h": {"12": old}}}}}}},
+              "done": ["2025-11"], "synced": None}
+    h._widen()
+    day = h.data["years"]["2025"]["m"]["11"]["d"]["01"]
+    assert len(day["t"]) == len(CODES) and day["t"][:7] == old and day["t"][7:] == [0.0] * (len(CODES) - 7)
+    assert len(day["h"]["12"]) == len(CODES)
+    assert h.data["done"] == [] and h.data["codes"] == list(CODES)
+
+
 def test_month_keys():
     assert list(month_keys(date(2025, 11, 20), date(2026, 2, 1))) == [(2025, 11), (2025, 12), (2026, 1), (2026, 2)]
 

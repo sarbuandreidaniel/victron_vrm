@@ -128,7 +128,7 @@ class VrmHistory:
         self.site_id = site_id
         self.start = start
         self.lock = asyncio.Lock()
-        self.data: dict[str, Any] = {"years": {}, "done": [], "synced": None}
+        self.data: dict[str, Any] = {"years": {}, "done": [], "synced": None, "codes": list(CODES)}
         self.backfilling = False
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
 
@@ -136,6 +136,28 @@ class VrmHistory:
         stored = await self._store.async_load()
         if stored:
             self.data = stored
+            if self.data.get("codes", list(CODES[:7])) != list(CODES):
+                self._widen()
+
+    def _widen(self) -> None:
+        """Pad every stored bucket to the current CODES and re-fetch all months.
+
+        Caches written before new flow codes were added keep their values; the
+        new codes start at zero until the backfill fetches them.
+        """
+        def pad(vals: list[float]) -> list[float]:
+            return vals + [0.0] * (N - len(vals))
+
+        for year in self.data["years"].values():
+            year["t"] = pad(year["t"])
+            for month in year["m"].values():
+                month["t"] = pad(month["t"])
+                for day in month["d"].values():
+                    day["t"] = pad(day["t"])
+                    day["h"] = {h: pad(v) for h, v in day["h"].items()}
+        self.data["codes"] = list(CODES)
+        self.data["done"] = []
+        self._save()
 
     def _save(self) -> None:
         self._store.async_delay_save(lambda: self.data, 5)
