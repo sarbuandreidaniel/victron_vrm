@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
   grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
 // fiecare flux are aceeași culoare în toate graficele
@@ -177,16 +177,33 @@ tr.nil td{color:${C.muted}}
 `;
 
 class VictronVrmCard extends HTMLElement {
+  constructor() {
+    super();
+    this._adopt();
+  }
+  // La un refresh lent, HA creează elementul și îi dă `hass` înainte ca modulul să definească
+  // cardul; valoarea rămâne atunci proprietate proprie a elementului și ascunde setter-ul.
+  // O preluăm la upgrade, ca să ajungă prin setter.
+  _adopt() {
+    if (Object.prototype.hasOwnProperty.call(this, 'hass')) {
+      const h = this.hass;
+      delete this.hass;
+      this.hass = h;
+    }
+  }
   setConfig(config) {
     const view = VIEWS.includes(config.view) ? config.view : 'zi';
     this._cfg = { paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an' }, ...config, view };
     this._cache = new Map();
+    // la upgrade, setConfig vine după connectedCallback și după hass
+    if (this._hass && this._d) this._load();
   }
   getCardSize() { return 20; }
   getGridOptions() { return { columns: 'full', rows: 'auto' }; }
   static getStubConfig() { return { view: 'zi' }; }
 
   connectedCallback() {
+    this._adopt();
     if (!this.shadowRoot) {
       this.attachShadow({ mode: 'open' }).innerHTML = `<style>${CSS}</style><div class="w"><div class="box msg">Se încarcă istoricul VRM…</div></div>`;
       this._ro = new ResizeObserver(() => this._charts());
@@ -199,6 +216,7 @@ class VictronVrmCard extends HTMLElement {
   }
   disconnectedCallback() { clearInterval(this._timer); this._closeFs(); }
   set hass(h) { const first = !this._hass; this._hass = h; if (first && this._d) this._load(); }
+  get hass() { return this._hass; }
 
   // ── perioada afișată ───────────────────────────────────────────────
   _range() {
@@ -246,7 +264,7 @@ class VictronVrmCard extends HTMLElement {
     return data;
   }
   async _load(refresh = false) {
-    const h = this._hass; if (!h || !this._d) return;
+    const h = this._hass; if (!h || !this._d || !this._cfg) return;
     const seq = (this._seq = (this._seq || 0) + 1);
     const { from, to } = this._range(), v = this._cfg.view, t = today();
     const live = from <= t && t <= to;
