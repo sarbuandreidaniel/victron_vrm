@@ -1,13 +1,20 @@
 {
   "domain": "victron_vrm",
   "name": "Victron VRM",
-  "codeowners": ["@sarbuandreidaniel"],
+  "codeowners": [
+    "@sarbuandreidaniel"
+  ],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "websocket_api"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "lovelace",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/sarbuandreidaniel/victron_vrm",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/sarbuandreidaniel/victron_vrm/issues",
   "requirements": [],
-  "version": "0.3.2"
+  "version": "0.4.0"
 }

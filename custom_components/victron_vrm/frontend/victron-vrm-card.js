@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.3.2';
+const VERSION = '0.4.0';
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
   grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
 // fiecare flux are aceeași culoare în toate graficele

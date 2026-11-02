@@ -28,7 +28,7 @@ Stația de încărcare stă pe ieșirea AC, deci `Pe`/`Be`/`Ge` sunt o parte din
 2. În VRM: **Preferences → Integrations → Access tokens → Add**, copiază tokenul.
 3. **Setări → Dispozitive și servicii → Adaugă integrare → Victron VRM**, lipește tokenul și alege instalația.
 
-Cardul este încărcat automat de integrare (nu trebuie adăugat ca resursă).
+Integrarea își adaugă singură cardul ca resursă Lovelace, cu codul inclus direct (`data:`), și o actualizează la fiecare versiune nouă. Varianta cu fișier (`/victron_vrm/…js`) nu rula din nou după un pull-to-refresh în aplicația iOS.
 
 ## Card
 

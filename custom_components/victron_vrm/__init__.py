@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 import logging
-from pathlib import Path
 
 import voluptuous as vol
 
-from homeassistant.components.frontend import add_extra_js_url
-from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ACCESS_TOKEN, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -17,14 +14,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from . import websocket
 from .api import VrmApi
 from .const import (
-    CARD_FILE,
-    CARD_URL,
     CONF_HISTORY_START,
     CONF_SITE_ID,
     DOMAIN,
@@ -32,6 +26,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .coordinator import VrmCoordinator
+from .frontend import async_register_card, async_unregister_card
 from .history import VrmHistory
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,13 +48,7 @@ RESYNC_SCHEMA = vol.Schema(
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the websocket API, the card and the resync service once."""
     websocket.async_register(hass)
-
-    if hass.http is not None:
-        integration = await async_get_integration(hass, DOMAIN)
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARD_URL, str(Path(__file__).parent / CARD_FILE), True)]
-        )
-        add_extra_js_url(hass, f"{CARD_URL}?v={integration.version}")
+    await async_register_card(hass)
 
     async def resync(call: ServiceCall) -> None:
         start: date = call.data["start_date"]
@@ -105,3 +94,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> bool
 async def async_remove_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> None:
     """Delete the cached history together with the entry."""
     await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}").async_remove()
+    if not hass.config_entries.async_entries(DOMAIN):
+        await async_unregister_card(hass)

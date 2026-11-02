@@ -28,7 +28,8 @@ BACKFILL_PAUSE = 1.0
 
 STORAGE_VERSION = 1
 
-CARD_URL = "/victron_vrm/victron-vrm-card.js"
 CARD_FILE = "frontend/victron-vrm-card.js"
+# First characters of the card source; identifies the card's Lovelace resource.
+CARD_MARKER = "/* victron-vrm-card"
 
 SERVICE_RESYNC = "resync"
