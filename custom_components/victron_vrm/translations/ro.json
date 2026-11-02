@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Victron VRM",
+        "description": "Creează un access token în VRM: Preferences → Integrations → Access tokens.",
+        "data": { "access_token": "Access token" }
+      },
+      "site": {
+        "title": "Instalație",
+        "description": "Alege instalația. Istoricul se descarcă de la data de început (implicit: ziua în care instalația a fost adăugată în VRM).",
+        "data": { "site_id": "Instalație", "history_start": "Început istoric" }
+      },
+      "reauth_confirm": {
+        "title": "Token VRM nou",
+        "description": "VRM a respins tokenul actual. Introdu unul nou.",
+        "data": { "access_token": "Access token" }
+      }
+    },
+    "error": {
+      "invalid_auth": "VRM a respins tokenul.",
+      "cannot_connect": "API-ul VRM nu răspunde.",
+      "no_sites": "Tokenul nu are acces la nicio instalație."
+    },
+    "abort": {
+      "already_configured": "Instalația este deja configurată.",
+      "reauth_successful": "Token actualizat.",
+      "wrong_account": "Tokenul nou nu are acces la această instalație."
+    }
+  },
+  "entity": {
+    "sensor": { "last_sync": { "name": "Ultima sincronizare" } }
+  },
+  "services": {
+    "resync": {
+      "name": "Resincronizează istoricul",
+      "description": "Descarcă din nou istoricul VRM pentru lunile dintre cele două date.",
+      "fields": {
+        "start_date": { "name": "Data de început", "description": "Prima zi de descărcat (se reia toată luna ei)." },
+        "end_date": { "name": "Data de sfârșit", "description": "Ultima zi de descărcat. Implicit: azi." }
+      }
+    }
+  }
+}

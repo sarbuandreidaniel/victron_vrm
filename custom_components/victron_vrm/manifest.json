@@ -1,0 +1,13 @@
+{
+  "domain": "victron_vrm",
+  "name": "Victron VRM",
+  "codeowners": ["@sarbuandreidaniel"],
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "websocket_api"],
+  "documentation": "https://github.com/sarbuandreidaniel/victron_vrm",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/sarbuandreidaniel/victron_vrm/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

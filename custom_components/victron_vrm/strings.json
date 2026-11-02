@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Victron VRM",
+        "description": "Create an access token in VRM: Preferences → Integrations → Access tokens.",
+        "data": { "access_token": "Access token" }
+      },
+      "site": {
+        "title": "Installation",
+        "description": "Pick the installation. History is fetched from the start date (default: the day the installation was added to VRM).",
+        "data": { "site_id": "Installation", "history_start": "History start" }
+      },
+      "reauth_confirm": {
+        "title": "New VRM access token",
+        "description": "VRM rejected the current token. Enter a new one.",
+        "data": { "access_token": "Access token" }
+      }
+    },
+    "error": {
+      "invalid_auth": "VRM rejected the token.",
+      "cannot_connect": "Cannot reach the VRM API.",
+      "no_sites": "The token has no installations."
+    },
+    "abort": {
+      "already_configured": "This installation is already configured.",
+      "reauth_successful": "Token updated.",
+      "wrong_account": "The new token does not have access to this installation."
+    }
+  },
+  "entity": {
+    "sensor": { "last_sync": { "name": "Last sync" } }
+  },
+  "services": {
+    "resync": {
+      "name": "Re-sync history",
+      "description": "Fetch the VRM history again for the months between the two dates.",
+      "fields": {
+        "start_date": { "name": "Start date", "description": "First day to re-fetch (its whole month is re-fetched)." },
+        "end_date": { "name": "End date", "description": "Last day to re-fetch. Defaults to today." }
+      }
+    }
+  }
+}
