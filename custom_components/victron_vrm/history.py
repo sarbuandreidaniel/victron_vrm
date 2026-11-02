@@ -235,7 +235,12 @@ class VrmHistory:
 
     def years_summary(self) -> dict[str, Any]:
         return {
-            ys: {"t": y["t"], "m": {ms: m["t"] for ms, m in sorted(y["m"].items())}}
+            ys: {
+                "t": y["t"],
+                "m": {ms: m["t"] for ms, m in sorted(y["m"].items())},
+                # days with data per month, for per-day / average-power figures
+                "n": {ms: len(m["d"]) for ms, m in sorted(y["m"].items())},
+            }
             for ys, y in sorted(self.data["years"].items())
         }
 

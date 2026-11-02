@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
   grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
 // fiecare flux are aceeași culoare în toate graficele
@@ -51,6 +51,9 @@ function derive(r) {
   r.ev = v.Pe + v.Be + v.Ge; r.house = v.hPc + v.hBc + v.hGc;
   r.imp = v.Gc + v.Gb; r.inj = v.Pg + v.Bg;
   r.chg = v.Pb + v.Gb; r.dis = v.Bc + v.Bg;
+  // tot ce intră (producție + import) minus tot ce iese (consum + injecție): VRM pune pierderile
+  // invertoarelor și ale bateriei pe fluxurile bateriei; are sens doar pe o lună sau mai mult
+  r.loss = r.chg - r.dis;
   r.indep = r.cons > 0 ? (v.Pc + v.Bc) / r.cons : NaN;
   r.autoc = r.prod > 0 ? (v.Pc + v.Pb) / r.prod : NaN;
   r.any = BASE.some((c) => v[c] > 0);
@@ -112,7 +115,7 @@ const CHARTS = [
     names: { Gc: 'Import pentru consum', Gb: 'Import pentru baterie', Pg: 'Injecție din solar', Bg: 'Injecție din baterie' } },
   { id: 'cp', ttl: 'Unde a mers producția', note: 'Energia produsă de panouri, după destinație', up: ['Pc', 'Pb', 'Pg'],
     names: { Pc: 'Consumată direct', Pb: 'În baterie', Pg: 'În rețea' } },
-  { id: 'cb', ttl: 'Baterie', note: 'În sus încărcare, în jos descărcare', up: ['Pb', 'Gb'], down: ['Bc', 'Bg'],
+  { id: 'cb', ttl: 'Baterie', note: 'În sus încărcare, în jos descărcare; diferența include pierderile invertoarelor și ale conversiilor, nu doar ale bateriei', up: ['Pb', 'Gb'], down: ['Bc', 'Bg'],
     names: { Pb: 'Încărcare din solar', Gb: 'Încărcare din rețea', Bc: 'Descărcare spre consum', Bg: 'Descărcare în rețea' } },
   { id: 'ce', ttl: 'Stația de încărcare', note: 'Energia primită de mașină, după sursă', up: ['Pe', 'Be', 'Ge'], ev: true,
     names: { Pe: 'Din solar', Be: 'Din baterie', Ge: 'Din rețea' } },
@@ -134,7 +137,7 @@ h2{font-size:17px;font-weight:500;margin:10px 0 0;color:${C.fg}}
 h2 small{font-weight:400;color:${C.muted};font-size:13px;margin-left:8px}
 .ttl{color:${C.fg};font-size:15px;font-weight:500;margin:0 0 4px}
 .note{color:${C.muted};font-size:12px;margin:0 0 10px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(max(132px,calc((100% - (var(--k,8) - 1) * 12px) / var(--k,8))),1fr));gap:12px}
 .kpi .l{color:${C.muted};font-size:12px}
 .kpi .v{font-family:Georgia,'Times New Roman',serif;font-size:28px;font-weight:400;margin-top:6px;font-variant-numeric:tabular-nums}
 .kpi .u{font-family:Roboto,Helvetica,system-ui,sans-serif;color:${C.muted};font-size:12px;margin-left:4px}
@@ -279,7 +282,8 @@ class VictronVrmCard extends HTMLElement {
         const r = await this._ws({ type: 'victron_vrm/years' }, true);
         const y = r.years[String(from.getFullYear())];
         rows = Array.from({ length: 12 }, (_, i) => Object.assign(mk(p2(i + 1), y && y.m[p2(i + 1)], r.codes),
-          { label: LUNI[i], tip: cap(`${LUNI_L[i]} ${from.getFullYear()}`), d: new Date(from.getFullYear(), i, 1) }));
+          { label: LUNI[i], tip: cap(`${LUNI_L[i]} ${from.getFullYear()}`), d: new Date(from.getFullYear(), i, 1),
+            days: (y && y.n && y.n[p2(i + 1)]) || 0 }));
         years = Object.keys(r.years).sort().map((k) => Object.assign(mk(k, r.years[k].t, r.codes), { label: k }));
       } else {
         const r = await this._ws({ type: 'victron_vrm/days', start: iso(from), end: iso(to) }, live);
@@ -325,9 +329,14 @@ class VictronVrmCard extends HTMLElement {
     const share = (x, of) => (of > 0 ? pct(x / of) : '—');
     const per = { zi: 'în această zi', saptamana: 'în această săptămână', luna: 'în această lună', an: `în ${from.getFullYear()}` }[v];
     const hasEv = tot.ev > 0;
+    // pierderile apar doar pe lună / an: pe zi sau săptămână ar include energia rămasă în baterie
+    const showLoss = v === 'luna' || v === 'an';
+    const hours = 24 * (v === 'an' ? rows.reduce((a, r) => a + (r.days || 0), 0) : n);
+    const lossW = hours > 0 ? tot.loss / hours * 1000 : NaN;
     const take = `${cap(per)}, casa a consumat <b>${kwh(tot.house)} kWh</b>: <b>${share(tot.v.hPc, tot.house)}</b> direct din solar, <b>${share(tot.v.hBc, tot.house)}</b> din baterie și <b>${share(tot.v.hGc, tot.house)}</b> din rețea. `
       + (hasEv ? `Mașina a primit <b>${kwh(tot.ev)} kWh</b>: <b>${share(tot.v.Pe, tot.ev)}</b> din solar, <b>${share(tot.v.Be, tot.ev)}</b> din baterie și <b>${share(tot.v.Ge, tot.ev)}</b> din rețea. ` : '')
-      + `Panourile au produs <b>${kwh(tot.prod)} kWh</b>, din care <b>${share(tot.v.Pc, tot.prod)}</b> au fost consumate direct, <b>${share(tot.v.Pb, tot.prod)}</b> în baterie și <b>${share(tot.v.Pg, tot.prod)}</b> în rețea.`;
+      + `Panourile au produs <b>${kwh(tot.prod)} kWh</b>, din care <b>${share(tot.v.Pc, tot.prod)}</b> au fost consumate direct, <b>${share(tot.v.Pb, tot.prod)}</b> în baterie și <b>${share(tot.v.Pg, tot.prod)}</b> în rețea.`
+      + (showLoss && tot.loss > 0 ? ` Invertoarele, conversiile și bateria au pierdut <b>${kwh(tot.loss)} kWh</b>, în medie <b>${isFinite(lossW) ? F0(lossW) : '—'} W</b> continuu.` : '');
 
     const first = { zi: 'Ora', saptamana: 'Ziua', luna: 'Ziua', an: 'Luna' }[v];
     const cols = (r) => `<td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td>`;
@@ -341,9 +350,10 @@ class VictronVrmCard extends HTMLElement {
     this._tot = tot; this._wide = this._wide || loadWide();
     const box = (c) => this._box(c);
 
+    const nk = 8 + (hasEv ? 1 : 0) + (showLoss ? 1 : 0);
     w.innerHTML = nav + `
-<div class="kpis">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.house), 'kWh', hasEv ? 'fără mașină' + (v === 'zi' ? '' : ' · ' + avg(tot.house)) : avg(tot.house))}${hasEv ? kpi('Stația de încărcare', kwh(tot.ev), 'kWh', `${share(tot.v.Pe + tot.v.Be, tot.ev)} din solar + baterie`) : ''}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
-${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${kpi('Independență', pct(tot.indep), '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pct(tot.autoc), '', 'producție folosită în casă sau baterie')}</div>
+<div class="kpis" style="--k:${nk > 8 ? Math.ceil(nk / 2) : nk}">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.house), 'kWh', hasEv ? 'fără mașină' + (v === 'zi' ? '' : ' · ' + avg(tot.house)) : avg(tot.house))}${hasEv ? kpi('Stația de încărcare', kwh(tot.ev), 'kWh', `${share(tot.v.Pe + tot.v.Be, tot.ev)} din solar + baterie`) : ''}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
+${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pct(tot.indep), '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pct(tot.autoc), '', 'producție folosită în casă sau baterie')}</div>
 <div class="charts">${CHARTS.filter((c) => !c.ev || hasEv).map(box).join('')}</div>
 <div class="box"><div class="ttl">${{ zi: 'Pe ore', saptamana: 'Pe zile', luna: 'Pe zile', an: 'Pe luni' }[v]}</div><div class="note">kWh${drill ? ' · apasă pe un rând pentru detalii' : ''}</div>
  <div class="tw"><table>${head(first)}<tbody>${body}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>

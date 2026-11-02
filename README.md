@@ -22,6 +22,8 @@ Descarcă istoricul de energie al unei instalații Victron din **VRM** (pe ore),
 
 Stația de încărcare stă pe ieșirea AC, deci `Pe`/`Be`/`Ge` sunt o parte din `Pc`/`Bc`/`Gc`: cardul arată consumul casei fără mașină și, separat, energia primită de mașină, după sursă. Din fluxuri cardul calculează producția, consumul, importul, injecția, încărcarea, descărcarea, independența și autoconsumul.
 
+**Pierderi sistem** (vederile Lună și An) = tot ce intră (producție + import) minus tot ce iese (consum + injecție). VRM pune aceste pierderi pe fluxurile bateriei, de aceea „încărcare baterie” e mult mai mare decât „descărcare baterie”; cea mai mare parte vine de la invertoare (consum în gol și conversii), nu de la baterie. Pe zi sau săptămână cifra nu se afișează, pentru că ar include și energia rămasă în baterie.
+
 ## Instalare
 
 1. HACS → Integrări → ⋮ → *Custom repositories* → `https://github.com/sarbuandreidaniel/victron_vrm` (tip *Integration*), apoi instalează **Victron VRM** și repornește HA.
