@@ -1,8 +1,11 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.7.0';
-const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
-  grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
+const VERSION = '0.8.0';
+// contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
+const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
+  ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
+// fontul interfeței Home Assistant, cu cifre de lățime egală pentru valori
+const FONT = "var(--ha-font-family-body, Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif)";
 // fiecare flux are aceeași culoare în toate graficele
 const FLOW = { Pc: '#199e70', Pb: '#c98500', Pg: '#9085e9', Bc: '#3987e5', Bg: '#d55181', Gc: '#d03b3b', Gb: '#3fae3f',
   Pe: '#199e70', Be: '#3987e5', Ge: '#d03b3b' };
@@ -19,6 +22,9 @@ const ICON = { wide: 'M9,11H15V8L19,12L15,16V13H9V16L5,12L9,8V11M2,20V4H4V20H2M2
   narrow: 'M13,20V4H15.03V20H13M10,20V4H12.03V20H10M5,8L9.03,12L5,16V13H2V11H5V8M20,16L16,12L20,8V11H23V13H20V16Z',
   full: 'M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z',
   close: 'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z' };
+// pe telefon antetele tabelelor sunt prescurtate, ca toate coloanele să încapă pe lățime
+const th = (full, short) => `<th><span class="hn">${full}</span><span class="hm">${short}</span></th>`;
+const HEAD = (ev) => `${th('Producție', 'Prod.')}<th>Casă</th>${ev ? th('Mașină', 'Maș.') : ''}${th('Import', 'Imp.')}${th('Injecție', 'Inj.')}<th class="hn">Încărcare</th><th class="hn">Descărcare</th>${th('Independență', 'Indep.')}<th class="hn">Autoconsum</th>`;
 const svgI = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 // graficele lățite se țin minte în browser (preferință per vizitator)
 const WIDE_KEY = 'victron-vrm-wide';
@@ -74,8 +80,8 @@ function sum(rows, k = 'p') {
 
 // bare stivuite în sus / în jos, cu linie opțională; întoarce SVG
 function barChart(W, H, rows, o) {
-  const up = o.up || [], down = o.down || [], line = o.line, fz = o.fz || 1, fs = Math.round(11 * fz);
-  const ml = Math.round(40 * fz), mr = 8, mt = 10, mb = Math.round(24 * fz), iw = W - ml - mr, ih = H - mt - mb;
+  const up = o.up || [], down = o.down || [], line = o.line, fz = o.fz || 1, fs = Math.round(12 * fz);
+  const ml = Math.round(44 * fz), mr = 8, mt = 10, mb = Math.round(26 * fz), iw = W - ml - mr, ih = H - mt - mb;
   const val = (r, c) => r.v[c];
   const maxUp = Math.max(0.1, ...rows.map((r) => Math.max(up.reduce((a, c) => a + val(r, c), 0), line ? r[line] : 0)));
   const maxDn = down.length ? Math.max(0.1, ...rows.map((r) => down.reduce((a, c) => a + val(r, c), 0))) : 0;
@@ -130,38 +136,38 @@ const CHARTS = [
 
 const RAW_CSS = `
 :host{display:block}
-.w{max-width:1404px;margin:0 auto;font-family:Roboto,Helvetica,system-ui,sans-serif;color:${C.fg};background:${C.page};border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.w{max-width:1404px;margin:0 auto;font-family:${FONT};-webkit-font-smoothing:antialiased;color:${C.fg};background:${C.page};border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .box{background:${C.panel};border:1px solid ${C.border};border-radius:6px;padding:16px;position:relative}
 .nav{display:flex;align-items:center;gap:8px}
-.nav .t{font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:400;flex:1;min-width:0}
+.nav .t{font-size:24px;font-weight:500;letter-spacing:-.01em;flex:1;min-width:0}
 .nav .bt{display:flex;gap:8px;flex-shrink:0}
-.nav button{background:transparent;color:${C.fg};border:1px solid ${C.border};border-radius:6px;height:34px;min-width:34px;padding:0 10px;font:inherit;font-size:14px;cursor:pointer}
+.nav button{background:transparent;color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;height:36px;min-width:36px;padding:0 12px;font:inherit;font-size:15px;cursor:pointer}
 .nav button:hover:not(:disabled){background:#2a2a2a}
 .nav button:disabled{opacity:.35;cursor:default}
-.take{font-size:14px;line-height:1.55;color:${C.muted};margin-top:8px}
+.take{font-size:15px;line-height:1.6;color:${C.soft};margin-top:8px}
 .take b{color:${C.fg};font-weight:500}
-h2{font-size:17px;font-weight:500;margin:10px 0 0;color:${C.fg}}
-h2 small{font-weight:400;color:${C.muted};font-size:13px;margin-left:8px}
-.ttl{color:${C.fg};font-size:15px;font-weight:500;margin:0 0 4px}
-.note{color:${C.muted};font-size:12px;margin:0 0 10px}
+h2{font-size:18px;font-weight:500;margin:10px 0 0;color:${C.fg}}
+h2 small{font-weight:400;color:${C.muted};font-size:14px;margin-left:8px}
+.ttl{color:${C.fg};font-size:16px;font-weight:500;margin:0 0 4px}
+.note{color:${C.muted};font-size:13px;line-height:1.45;margin:0 0 10px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(max(calc(132px * var(--fz,1)),calc((100% - (var(--k,8) - 1) * 12px) / var(--k,8))),1fr));gap:12px}
-.kpi .l{color:${C.muted};font-size:12px}
-.kpi .v{font-family:Georgia,'Times New Roman',serif;font-size:28px;font-weight:400;margin-top:6px;font-variant-numeric:tabular-nums}
-.kpi .u{font-family:Roboto,Helvetica,system-ui,sans-serif;color:${C.muted};font-size:12px;margin-left:4px}
-.kpi .s{color:${C.muted};font-size:12px;margin-top:2px}
+.kpi .l{color:${C.muted};font-size:13px}
+.kpi .v{font-size:28px;font-weight:500;letter-spacing:-.01em;margin-top:6px;font-variant-numeric:tabular-nums}
+.kpi .u{color:${C.muted};font-size:13px;font-weight:400;letter-spacing:0;margin-left:4px}
+.kpi .s{color:${C.muted};font-size:13px;line-height:1.4;margin-top:4px}
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:12px}
-.leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:${C.muted};margin-bottom:8px}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:${C.muted};margin-bottom:8px}
 .leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 .leg i.ln{height:2px;vertical-align:3px}
 .leg b{color:${C.fg};font-weight:500;margin-left:4px;font-variant-numeric:tabular-nums}
 .ch{position:relative;min-height:220px}
 .ch svg{display:block}
-.tip{position:absolute;pointer-events:none;background:${C.pop};border:1px solid ${C.border};border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.45);padding:6px 10px;font-size:12px;white-space:nowrap;z-index:2;color:${C.fg}}
+.tip{position:absolute;pointer-events:none;background:${C.pop};border:1px solid ${C.ctl};border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.45);padding:6px 10px;font-size:13px;line-height:1.45;white-space:nowrap;z-index:2;color:${C.fg}}
 .tip .d{color:${C.muted};margin-bottom:2px}
 .tip i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
 .tw{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;color:${C.fg}}
-th{color:${C.muted};font-weight:500;font-size:12px;text-align:right;padding:6px 8px;border-bottom:1px solid ${C.border}}
+table{width:100%;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums;color:${C.fg}}
+th{color:${C.muted};font-weight:500;font-size:13px;text-align:right;padding:6px 8px;border-bottom:1px solid ${C.border}}
 td{text-align:right;padding:7px 8px;border-bottom:1px solid ${C.border}}
 th:first-child,td:first-child{text-align:left}
 tfoot td{font-weight:500;border-bottom:none;border-top:1px solid ${C.axis}}
@@ -173,37 +179,38 @@ tr.nil td{color:${C.muted}}
 .box.wide{grid-column:1/-1}
 .hd{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
 .tools{display:flex;gap:6px;flex-shrink:0}
-.tb{background:transparent;border:1px solid ${C.border};border-radius:6px;width:30px;height:30px;padding:0;color:${C.muted};cursor:pointer;display:grid;place-items:center}
+.tb{background:transparent;border:1px solid ${C.ctl};border-radius:6px;width:32px;height:32px;padding:0;color:${C.muted};cursor:pointer;display:grid;place-items:center}
 .tb:hover{color:${C.fg};background:#2a2a2a}
 .tb svg{width:18px;height:18px;fill:currentColor}
-.fs{position:fixed;inset:0;z-index:2147483000;background:${C.page};color:${C.fg};font-family:Roboto,Helvetica,system-ui,sans-serif;display:flex;flex-direction:column;box-sizing:border-box;
+.fs{position:fixed;inset:0;z-index:2147483000;background:${C.page};color:${C.fg};font-family:${FONT};display:flex;flex-direction:column;box-sizing:border-box;
   padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
-.fs .ttl{font-size:17px}
+.fs .ttl{font-size:18px}
 .fs .ch{flex:1 1 auto;min-height:0}
 .hm{display:none}
-.msg{color:${C.muted};font-size:14px;padding:30px;text-align:center}
-.foot{color:${C.muted};font-size:12px;text-align:right}
+.msg{color:${C.muted};font-size:15px;padding:30px;text-align:center}
+.foot{color:${C.muted};font-size:13px;text-align:right}
 .set{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
 .seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.seg button{background:transparent;color:${C.fg};border:1px solid ${C.border};border-radius:6px;min-height:34px;padding:0 12px;font:inherit;font-size:14px;cursor:pointer}
+.seg button{background:transparent;color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;min-height:36px;padding:0 14px;font:inherit;font-size:15px;cursor:pointer}
 .seg button:hover{background:#2a2a2a}
 .seg button[aria-pressed="true"]{border-color:${C.sel};background:rgba(57,135,229,.18)}
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}
-.row .l{font-size:14px}
-.sw{position:relative;width:46px;height:26px;border-radius:13px;border:1px solid ${C.border};background:#333;cursor:pointer;flex-shrink:0;padding:0;transition:background .15s}
+.row .l{font-size:15px}
+.sw{position:relative;width:46px;height:26px;border-radius:13px;border:1px solid ${C.ctl};background:#333;cursor:pointer;flex-shrink:0;padding:0;transition:background .15s}
 .sw::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#bbb;transition:transform .15s}
 .sw[aria-checked="true"]{background:${C.sel};border-color:${C.sel}}
 .sw[aria-checked="true"]::after{transform:translateX(20px);background:#fff}
 .sw:disabled{opacity:.4;cursor:default}
-.btn{background:transparent;color:${C.fg};border:1px solid ${C.border};border-radius:6px;min-height:34px;padding:0 12px;font:inherit;font-size:14px;cursor:pointer}
+.btn{background:transparent;color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;min-height:36px;padding:0 14px;font:inherit;font-size:15px;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .btn:hover:not(:disabled){background:#2a2a2a}
 .btn:disabled{opacity:.4;cursor:default}
-ul.sch{margin:8px 0 0;padding-left:18px;color:${C.muted};font-size:13px;line-height:1.6}
-dl.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:10px 0 0;font-size:14px}
+ul.sch{margin:8px 0 0;padding-left:18px;color:${C.muted};font-size:14px;line-height:1.6}
+dl.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:10px 0 0;font-size:15px}
 dl.kv dt{color:${C.muted}}
 dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
-.ok{color:#3fae3f}.warn{color:#c98500}
-@media (max-width:700px){.w{padding:8px}.hm{display:inline}.hn{display:none}.kpi .v{font-size:24px}.nav .t{font-size:20px}table{font-size:13px}th,td{padding:6px 4px}}
+.ok{color:#4cc04c}.warn{color:#e09a1a}
+button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
+@media (max-width:700px){.w{padding:8px}.hm{display:inline}.hn{display:none}.kpi .v{font-size:24px}.nav .t{font-size:20px}table{font-size:14px}th{font-size:12px}th,td{padding:7px 3px}}
 `;
 // toate mărimile de text urmează --fz (setat pe gazda cardului din Setări)
 const CSS = RAW_CSS.replace(/font-size:(\d+)px/g, 'font-size:calc($1px * var(--fz,1))');
@@ -395,10 +402,10 @@ class VictronVrmCard extends HTMLElement {
 
     const first = { zi: 'Ora', saptamana: 'Ziua', luna: 'Ziua', an: 'Luna' }[v];
     const cols = (r) => `<td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td>`;
-    const head = (f) => `<thead><tr><th>${f}</th><th>Producție</th><th>Casă</th>${hasEv ? '<th>Mașină</th>' : ''}<th>Import</th><th>Injecție</th><th class="hn">Încărcare</th><th class="hn">Descărcare</th><th><span class="hn">Independență</span><span class="hm">Indep.</span></th><th class="hn">Autoconsum</th></tr></thead>`;
+    const head = (f) => `<thead><tr><th>${f}</th>${HEAD(hasEv)}</tr></thead>`;
     const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
     const body = rows.filter((r) => r.any || (v !== 'an' && !r.future)).map((r) => {
-      const lbl = v === 'zi' ? `${r.label}:00` : v === 'an' ? cap(LUNI_L[+r.k - 1]) : `<span class="hn">${esc(r.tip)}</span><span class="hm">${esc(r.label)}</span>`;
+      const lbl = v === 'zi' ? `${r.label}:00` : v === 'an' ? `<span class="hn">${cap(LUNI_L[+r.k - 1])}</span><span class="hm">${cap(LUNI[+r.k - 1])}</span>` : `<span class="hn">${esc(r.tip)}</span><span class="hm">${esc(r.label)}</span>`;
       const go = drill && r.any ? ` class="go" data-i="${rows.indexOf(r)}"` : r.any ? '' : ' class="nil"';
       return `<tr${go}><td>${lbl}</td>${cols(r)}</tr>`;
     }).join('');
@@ -424,7 +431,7 @@ ${this._yearsTable()}${this._foot()}`;
     if (this._cfg.view !== 'an' || !this._years || !this._years.length) return '';
     const y = String(this._d.getFullYear()), hasEv = this._years.some((r) => r.ev > 0);
     const rows = this._years.map((r) => `<tr class="go${r.k === y ? ' sel' : ''}" data-y="${r.k}"><td>${r.k}${r.k === String(today().getFullYear()) ? ' <span class="hn" style="color:' + C.muted + '">(în curs)</span>' : ''}</td><td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td></tr>`).join('');
-    return `<h2>Pe ani<small>apasă pe un an pentru lunile lui</small></h2><div class="box"><div class="tw"><table><thead><tr><th>An</th><th>Producție</th><th>Casă</th>${hasEv ? '<th>Mașină</th>' : ''}<th>Import</th><th>Injecție</th><th class="hn">Încărcare</th><th class="hn">Descărcare</th><th><span class="hn">Independență</span><span class="hm">Indep.</span></th><th class="hn">Autoconsum</th></tr></thead><tbody class="yrs">${rows}</tbody></table></div></div>`;
+    return `<h2>Pe ani<small>apasă pe un an pentru lunile lui</small></h2><div class="box"><div class="tw"><table><thead><tr><th>An</th>${HEAD(hasEv)}</tr></thead><tbody class="yrs">${rows}</tbody></table></div></div>`;
   }
   _foot() {
     const i = this._info; if (!i) return '';
