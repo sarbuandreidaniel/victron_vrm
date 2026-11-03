@@ -51,6 +51,23 @@ paths: { zi: azi, saptamana: sapt, luna: luna, an: an }
 
 `victron_vrm.resync` — descarcă din nou lunile dintre `start_date` și `end_date` (implicit azi).
 
+`victron_vrm.summary` — întoarce totalurile unei zile, luni sau ale unui an (`period: day | month | year`), din cache, fără apel la VRM. Fără `date` întoarce ultima perioadă încheiată: ieri, luna trecută, anul trecut. Răspunsul are cifrele (`kwh`, `flows`, `independence`, `self_consumption`) și un text gata de trimis (`title`, `message`). Exemplu de notificare zilnică:
+
+```yaml
+triggers:
+  - trigger: time
+    at: "08:00:00"
+actions:
+  - action: victron_vrm.summary
+    data:
+      period: day
+    response_variable: zi
+  - action: notify.mobile_app_telefon
+    data:
+      title: "{{ zi.title }}"
+      message: "{{ zi.message }}"
+```
+
 ## Entități
 
 `sensor.<instalatie>_ultima_sincronizare` — ora ultimei sincronizări cu VRM (diagnostic).

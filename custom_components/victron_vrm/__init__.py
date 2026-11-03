@@ -9,7 +9,8 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ACCESS_TOKEN, Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
@@ -23,11 +24,13 @@ from .const import (
     CONF_SITE_ID,
     DOMAIN,
     SERVICE_RESYNC,
+    SERVICE_SUMMARY,
     STORAGE_VERSION,
 )
 from .coordinator import VrmCoordinator
 from .frontend import async_register_card, async_unregister_card
 from .history import VrmHistory
+from .summary import PERIODS, default_day, summarize
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,9 +47,17 @@ RESYNC_SCHEMA = vol.Schema(
     }
 )
 
+SUMMARY_SCHEMA = vol.Schema(
+    {
+        vol.Required("period"): vol.In(PERIODS),
+        vol.Optional("date"): cv.date,
+        vol.Optional("config_entry_id"): cv.string,
+    }
+)
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the websocket API, the card and the resync service once."""
+    """Register the websocket API, the card and the services once."""
     websocket.async_register(hass)
     await async_register_card(hass)
 
@@ -61,6 +72,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
 
     hass.services.async_register(DOMAIN, SERVICE_RESYNC, resync, schema=RESYNC_SCHEMA)
+
+    async def summary(call: ServiceCall) -> ServiceResponse:
+        """Totals for a day, month or year; by default the last complete one."""
+        entry_id = call.data.get("config_entry_id")
+        entry = next(
+            (
+                e for e in hass.config_entries.async_loaded_entries(DOMAIN)
+                if entry_id is None or e.entry_id == entry_id
+            ),
+            None,
+        )
+        if entry is None:
+            raise ServiceValidationError("Victron VRM is not set up")
+        period: str = call.data["period"]
+        day: date = call.data.get("date") or default_day(period, dt_util.now().date())
+        vals, days = entry.runtime_data.history.period(period, day)
+        return summarize(period, day, vals, days)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SUMMARY,
+        summary,
+        schema=SUMMARY_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
     return True
 
 

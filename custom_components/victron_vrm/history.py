@@ -263,6 +263,19 @@ class VrmHistory:
         d = self._day(day)
         return dict(d["h"]) if d else {}
 
+    def period(self, period: str, day: date) -> tuple[list[float] | None, int]:
+        """Totals and number of days with data for the day / month / year of `day`."""
+        if period == "day":
+            d = self._day(day)
+            return (d["t"], 1) if d else (None, 0)
+        year = self.data["years"].get(str(day.year))
+        if not year:
+            return None, 0
+        if period == "month":
+            month = year["m"].get(f"{day.month:02d}")
+            return (month["t"], len(month["d"])) if month else (None, 0)
+        return year["t"], sum(len(m["d"]) for m in year["m"].values())
+
     def today(self) -> list[float]:
         d = self._day(dt_util.now().date())
         return d["t"] if d else _zero()

@@ -39,6 +39,18 @@
         "start_date": { "name": "Data de început", "description": "Prima zi de descărcat (se reia toată luna ei)." },
         "end_date": { "name": "Data de sfârșit", "description": "Ultima zi de descărcat. Implicit: azi." }
       }
+    },
+    "summary": {
+      "name": "Rezumat",
+      "description": "Totalurile de energie pentru o zi, lună sau an, cu un text gata de trimis ca notificare. Fără dată întoarce ultima perioadă încheiată (ieri, luna trecută, anul trecut).",
+      "fields": {
+        "period": { "name": "Perioadă", "description": "Zi, lună sau an." },
+        "date": { "name": "Dată", "description": "Orice zi din perioadă. Implicit ultima perioadă încheiată." },
+        "config_entry_id": { "name": "Instalație", "description": "Necesar doar cu mai multe instalații VRM." }
+      }
     }
+  },
+  "selector": {
+    "period": { "options": { "day": "Zi", "month": "Lună", "year": "An" } }
   }
 }

@@ -33,3 +33,4 @@ CARD_FILE = "frontend/victron-vrm-card.js"
 CARD_MARKER = "/* victron-vrm-card"
 
 SERVICE_RESYNC = "resync"
+SERVICE_SUMMARY = "summary"

@@ -7,3 +7,22 @@ resync:
     end_date:
       selector:
         date:
+
+summary:
+  fields:
+    period:
+      required: true
+      selector:
+        select:
+          options:
+            - day
+            - month
+            - year
+          translation_key: period
+    date:
+      selector:
+        date:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: victron_vrm

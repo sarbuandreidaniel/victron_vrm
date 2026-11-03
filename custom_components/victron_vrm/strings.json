@@ -39,6 +39,18 @@
         "start_date": { "name": "Start date", "description": "First day to re-fetch (its whole month is re-fetched)." },
         "end_date": { "name": "End date", "description": "Last day to re-fetch. Defaults to today." }
       }
+    },
+    "summary": {
+      "name": "Summary",
+      "description": "Energy totals for a day, month or year, with a ready-made notification text. Without a date it returns the last complete period (yesterday, last month, last year).",
+      "fields": {
+        "period": { "name": "Period", "description": "Day, month or year." },
+        "date": { "name": "Date", "description": "Any day inside the period. Defaults to the last complete period." },
+        "config_entry_id": { "name": "Installation", "description": "Only needed with more than one VRM installation." }
+      }
     }
+  },
+  "selector": {
+    "period": { "options": { "day": "Day", "month": "Month", "year": "Year" } }
   }
 }
