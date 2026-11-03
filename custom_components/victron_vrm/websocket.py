@@ -1,4 +1,4 @@
-"""Read-only websocket API used by the dashboard card."""
+"""Websocket API used by the dashboard card: history reads plus the financial settings."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CODES, DOMAIN
+from .const import CODES, DOMAIN, FINANCE_KEYS, OPT_FINANCE
 from .history import VrmHistory
 
 MAX_DAYS = 400
@@ -45,6 +45,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_years)
     websocket_api.async_register_command(hass, ws_days)
     websocket_api.async_register_command(hass, ws_hours)
+    websocket_api.async_register_command(hass, ws_finance)
 
 
 def _not_loaded(connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
@@ -67,6 +68,7 @@ def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
         "synced": h.data.get("synced"),
         "backfilling": h.backfilling,
         "years": sorted(h.data["years"]),
+        "finance": entry.options.get(OPT_FINANCE, {}),
     })
 
 
@@ -114,3 +116,21 @@ def ws_hours(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
     if (h := _history(hass, msg)) is None:
         return _not_loaded(connection, msg)
     connection.send_result(msg["id"], {"codes": CODES, "hours": h.hours(msg["date"])})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/finance",
+        vol.Optional("entry_id"): str,
+        **{vol.Required(k): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))) for k in FINANCE_KEYS},
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_finance(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Save the investment and energy prices used by the payback view."""
+    if (entry := _entry(hass, msg)) is None:
+        return _not_loaded(connection, msg)
+    finance = {k: msg[k] for k in FINANCE_KEYS if msg[k] is not None}
+    hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_FINANCE: finance})
+    connection.send_result(msg["id"], {"finance": finance})

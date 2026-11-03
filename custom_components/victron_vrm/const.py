@@ -34,3 +34,10 @@ CARD_MARKER = "/* victron-vrm-card"
 
 SERVICE_RESYNC = "resync"
 SERVICE_SUMMARY = "summary"
+
+# Financial settings, kept in the config entry options and edited from the card.
+#   investment    lei paid for the system
+#   price_import  lei per kWh taken from the grid
+#   price_export  lei per kWh injected (compensated monthly against import)
+OPT_FINANCE = "finance"
+FINANCE_KEYS = ("investment", "price_import", "price_export")

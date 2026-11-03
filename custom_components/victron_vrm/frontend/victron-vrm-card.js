@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.8.0';
+const VERSION = '0.9.0';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -11,6 +11,8 @@ const FLOW = { Pc: '#199e70', Pb: '#c98500', Pg: '#9085e9', Bc: '#3987e5', Bg: '
   Pe: '#199e70', Be: '#3987e5', Ge: '#d03b3b' };
 // consumul casei fără mașină (hPc = solar direct în casă etc.) păstrează culoarea sursei
 FLOW.hPc = FLOW.Pc; FLOW.hBc = FLOW.Bc; FLOW.hGc = FLOW.Gc;
+// amortizare: economia din autoconsum ia culoarea solarului consumat direct, injecția pe a injecției
+FLOW.eco = FLOW.Pc; FLOW.injv = FLOW.Pg;
 const BASE = ['Pc', 'Pb', 'Pg', 'Bc', 'Bg', 'Gc', 'Gb', 'Pe', 'Be', 'Ge'];
 const ZILE = ['duminică', 'luni', 'marți', 'miercuri', 'joi', 'vineri', 'sâmbătă'];
 const ZILE_S = ['dum.', 'lun.', 'mar.', 'mie.', 'joi', 'vin.', 'sâm.'];
@@ -36,8 +38,10 @@ const FZ = [['Mică', 0.9], ['Normală', 1], ['Mare', 1.15], ['Foarte mare', 1.3
 const loadFz = () => { try { const v = +localStorage.getItem(FZ_KEY); return FZ.some((f) => f[1] === v) ? v : 1; } catch (e) { return 1; } };
 const saveFz = (v) => { try { localStorage.setItem(FZ_KEY, String(v)); } catch (e) { /* stocare indisponibilă */ } };
 const FZ_EVENT = 'victron-vrm-fz';
+const FIN_EVENT = 'victron-vrm-finance';
 const nf = (d) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: d, maximumFractionDigits: d });
-const F0 = nf(0).format, F1 = nf(1).format;
+const F0 = nf(0).format, F1 = nf(1).format, F2 = nf(2).format;
+const lei = (v) => (Math.abs(v) >= 1000 ? F0(v) : F2(v));
 const kwh = (v) => (v >= 100 ? F0(v) : F1(v));
 const pct = (v) => (isFinite(v) ? F0(v * 100) + '%' : '—');
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -77,6 +81,25 @@ function sum(rows, k = 'p') {
   for (const r of rows) for (const c of BASE) v[c] += r.v[c];
   return derive({ k, v });
 }
+
+// Câștigul unei perioade față de situația fără sistem, cu compensarea lunară import / injecție:
+//   economii = energia consumată fără s-o cumperi (Pc + Bc − Gb = consum − import) × preț consum
+//   injecție = energia injectată × preț injecție
+// Suma lor e exact factura fără sistem minus factura cu sistem, oricare ar fi raportul import / injecție.
+function money(r, P, PI) {
+  const comp = Math.min(r.imp, r.inj);
+  r.v.eco = Math.max(0, r.v.Pc + r.v.Bc - r.v.Gb) * P;
+  r.v.injv = r.inj * PI;
+  r.gain = r.v.eco + r.v.injv;
+  r.billNo = r.cons * P;
+  // negativ când injecția compensată depășește costul importului
+  r.bill = comp * (P - PI) + (r.imp - comp) * P - Math.max(0, r.inj - r.imp) * PI;
+  return r;
+}
+const PAY_CHARTS = [
+  { id: 'cm', ttl: 'Câștig pe luni', note: 'Energia consumată fără s-o cumperi, plus valoarea energiei injectate', up: ['eco', 'injv'], unit: 'lei', num: lei,
+    names: { eco: 'Economii din autoconsum', injv: 'Valoarea injecției' } },
+];
 
 // bare stivuite în sus / în jos, cu linie opțională; întoarce SVG
 function barChart(W, H, rows, o) {
@@ -208,6 +231,18 @@ ul.sch{margin:8px 0 0;padding-left:18px;color:${C.muted};font-size:14px;line-hei
 dl.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:10px 0 0;font-size:15px}
 dl.kv dt{color:${C.muted}}
 dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.pct{font-size:28px;font-weight:500;font-variant-numeric:tabular-nums}
+.bar{height:14px;border-radius:7px;background:#333;overflow:hidden;margin:12px 0 10px}
+.bar i{display:block;height:100%;background:${FLOW.Pc};border-radius:7px 0 0 7px}
+.bl{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;font-size:15px;color:${C.muted}}
+.bl b{color:${C.fg};font-weight:500;font-variant-numeric:tabular-nums}
+.fld{display:grid;gap:6px;margin-top:12px}
+.fld label{font-size:14px;color:${C.muted}}
+.fld .in{display:flex;align-items:center;gap:8px}
+.fld input{flex:1;min-width:0;background:${C.page};color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;height:38px;padding:0 10px;font:inherit;font-size:16px;font-variant-numeric:tabular-nums}
+.fld input:focus-visible{outline:2px solid ${C.focus};outline-offset:1px}
+.fld input:disabled{opacity:.6}
+.fld span{font-size:14px;color:${C.muted};min-width:56px}
 .ok{color:#4cc04c}.warn{color:#e09a1a}
 button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
 @media (max-width:700px){.w{padding:8px}.hm{display:inline}.hn{display:none}.kpi .v{font-size:24px}.nav .t{font-size:20px}table{font-size:14px}th{font-size:12px}th,td{padding:7px 3px}}
@@ -231,8 +266,8 @@ class VictronVrmCard extends HTMLElement {
     }
   }
   setConfig(config) {
-    const view = VIEWS.includes(config.view) || config.view === 'setari' ? config.view : 'zi';
-    this._cfg = { paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an' }, ...config, view };
+    const view = VIEWS.includes(config.view) || config.view === 'setari' || config.view === 'amortizare' ? config.view : 'zi';
+    this._cfg = { ...config, view, paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an', amortizare: 'amortizare', setari: 'setari', ...(config.paths || {}) } };
     this._cache = new Map();
     // la upgrade, setConfig vine după connectedCallback și după hass
     if (this._hass && this._d) this._load();
@@ -254,6 +289,9 @@ class VictronVrmCard extends HTMLElement {
     this._onFz = () => this._applyFz();
     window.addEventListener(FZ_EVENT, this._onFz);
     window.addEventListener('storage', this._onFz);
+    // pagina Setări a salvat deja valorile noi; celelalte pagini le recitesc
+    this._onFin = () => { this._cache.clear(); if (!this._settings()) this._load(); };
+    window.addEventListener(FIN_EVENT, this._onFin);
     this._timer = setInterval(() => this._load(true), 5 * 60 * 1000);
     this._load();
   }
@@ -261,6 +299,7 @@ class VictronVrmCard extends HTMLElement {
     clearInterval(this._timer); this._closeFs();
     window.removeEventListener(FZ_EVENT, this._onFz);
     window.removeEventListener('storage', this._onFz);
+    window.removeEventListener(FIN_EVENT, this._onFin);
   }
   set hass(h) {
     const first = !this._hass; this._hass = h;
@@ -301,11 +340,12 @@ class VictronVrmCard extends HTMLElement {
     this._closeFs();
     const parts = location.pathname.split('/').filter(Boolean);
     const base = parts.length > 1 ? '/' + parts.slice(0, -1).join('/') : '/' + (parts[0] || 'lovelace');
-    history.pushState(null, '', `${base}/${this._cfg.paths[view]}?d=${iso(d)}`);
+    history.pushState(null, '', `${base}/${this._cfg.paths[view]}${d ? `?d=${iso(d)}` : ''}`);
     window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
   }
   _title() {
     const { from, to } = this._range(), v = this._cfg.view;
+    if (v === 'amortizare') return 'Amortizare';
     if (v === 'zi') return cap(`${ZILE[from.getDay()]}, ${from.getDate()} ${LUNI_L[from.getMonth()]} ${from.getFullYear()}`);
     if (v === 'saptamana') {
       const y = from.getFullYear() === to.getFullYear() ? '' : ' ' + from.getFullYear();
@@ -329,6 +369,18 @@ class VictronVrmCard extends HTMLElement {
       if (refresh) return;
       try { this._info = await this._ws({ type: 'victron_vrm/info' }, true); this._err = null; } catch (e) { this._err = e && e.message ? e.message : String(e); }
       return this._renderSettings();
+    }
+    if (this._cfg.view === 'amortizare') {
+      const seq = (this._seq = (this._seq || 0) + 1);
+      try {
+        const [info, yrs] = await Promise.all([this._ws({ type: 'victron_vrm/info' }, true), this._ws({ type: 'victron_vrm/years' }, true)]);
+        if (seq !== this._seq) return;
+        this._info = info; this._yrs = yrs; this._err = null;
+      } catch (e) {
+        if (seq !== this._seq) return;
+        this._err = e && e.message ? e.message : String(e);
+      }
+      return this._renderPay();
     }
     const seq = (this._seq = (this._seq || 0) + 1);
     const { from, to } = this._range(), v = this._cfg.view, t = today();
@@ -449,11 +501,11 @@ ${this._yearsTable()}${this._foot()}`;
   }
   _legend(c) {
     const tot = this._tot;
-    return `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${kwh(tot.v[k])}</b></span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b></span>` : ''}</div>`;
+    return `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${(c.num || kwh)(tot.v[k])}</b></span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b></span>` : ''}</div>`;
   }
   _box(c) {
     const wide = this._wide.has(c.id), lbl = wide ? 'Lățime normală' : 'Lățime dublă';
-    return `<div class="box${wide ? ' wide' : ''}"><div class="hd"><div><div class="ttl">${c.ttl}</div><div class="note">${c.note} · kWh</div></div>
+    return `<div class="box${wide ? ' wide' : ''}"><div class="hd"><div><div class="ttl">${c.ttl}</div><div class="note">${c.note} · ${c.unit || 'kWh'}</div></div>
       <div class="tools"><button class="tb wb hn" data-c="${c.id}" title="${lbl}" aria-label="${lbl}">${svgI(wide ? ICON.narrow : ICON.wide)}</button>
       <button class="tb fb" data-c="${c.id}" title="Ecran complet" aria-label="Ecran complet">${svgI(ICON.full)}</button></div></div>
       ${this._legend(c)}<div class="ch" id="${c.id}"></div></div>`;
@@ -470,7 +522,7 @@ ${this._yearsTable()}${this._foot()}`;
   _charts() {
     const root = this.shadowRoot; if (!root || !this._rows) return;
     this._cws = this._cws || {};
-    for (const c of CHARTS) {
+    for (const c of this._chartList || CHARTS) {
       const el = root.getElementById(c.id);
       if (!el) continue;
       const W = el.clientWidth;
@@ -483,16 +535,16 @@ ${this._yearsTable()}${this._foot()}`;
     const v = this._cfg.view, rows = this._rows;
     const label = (r) => r.label;
     // barele cresc odată cu graficul (lățime dublă / ecran complet), până la 2,5×
-    const maxBar = Math.round({ zi: 18, saptamana: 40, luna: 16, an: 36 }[v] * Math.min(2.5, Math.max(1, W / 640)));
-    const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
-    const svg = barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : 34, click: !!drill, fz: this._fz || 1 });
+    const maxBar = Math.round({ zi: 18, saptamana: 40, luna: 16, an: 36, amortizare: 36 }[v] * Math.min(2.5, Math.max(1, W / 640)));
+    const drill = v === 'an' || v === 'amortizare' ? 'luna' : v === 'zi' ? null : 'zi';
+    const svg = barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : v === 'amortizare' ? 44 : 34, click: !!drill, fz: this._fz || 1 });
     el.innerHTML = svg + '<div class="tip" hidden></div>';
     const tip = el.querySelector('.tip'), hl = el.querySelector('.hl');
     el.querySelectorAll('.hit').forEach((hit) => {
       const r = rows[+hit.dataset.i];
       hit.addEventListener('mousemove', (ev) => {
         hl.setAttribute('x', hit.getAttribute('x')); hl.setAttribute('width', hit.getAttribute('width')); hl.setAttribute('opacity', '0.06');
-        const lines = [...c.up, ...(c.down || [])].map((k) => `<div><i style="background:${FLOW[k]}"></i>${c.names[k]}: ${F1(r.v[k])} kWh</div>`).join('')
+        const lines = [...c.up, ...(c.down || [])].map((k) => `<div><i style="background:${FLOW[k]}"></i>${c.names[k]}: ${(c.num || F1)(r.v[k])} ${c.unit || 'kWh'}</div>`).join('')
           + (c.line ? `<div><i style="background:${C.fg}"></i>Producție: ${F1(r.prod)} kWh</div>` : '');
         tip.innerHTML = `<div class="d">${esc(r.tip)}</div>${lines}`;
         tip.hidden = false;
@@ -503,6 +555,83 @@ ${this._yearsTable()}${this._foot()}`;
       hit.addEventListener('mouseleave', () => { tip.hidden = true; hl.setAttribute('opacity', '0'); });
       if (drill && r.any) hit.addEventListener('click', () => this._go(drill, r.d || parse(r.k)));
     });
+  }
+
+  // ── amortizare: investiția recuperată din câștigul lunar ────────────
+  _fin() {
+    const f = (this._info && this._info.finance) || {};
+    return { inv: f.investment, P: f.price_import, PI: f.price_export };
+  }
+  _renderPay() {
+    const w = this.shadowRoot && this.shadowRoot.querySelector('.w'); if (!w) return;
+    const head = `<div class="box"><div class="nav"><div class="t">Amortizare</div></div><div class="take"></div></div>`;
+    if (this._err) { w.innerHTML = head + `<div class="box msg">Nu am putut citi istoricul VRM: ${esc(this._err)}</div>`; return; }
+    if (!this._info || !this._yrs) return;
+    const { inv, P, PI } = this._fin();
+    if (!(inv > 0) || !(P > 0) || !(PI >= 0)) {
+      w.innerHTML = head + `<div class="box msg">Completează valoarea investiției și prețurile energiei în <button class="btn go-set">Setări</button></div>`;
+      w.querySelector('.take').remove();
+      w.querySelector('.go-set').addEventListener('click', () => this._go('setari'));
+      return;
+    }
+    const yrs = this._yrs, months = [];
+    for (const ys of Object.keys(yrs.years).sort()) {
+      const y = yrs.years[ys];
+      for (const ms of Object.keys(y.m).sort()) {
+        const m = +ms - 1, first = !months.length || m === 0;
+        months.push(money(Object.assign(mk(`${ys}-${ms}`, y.m[ms], yrs.codes), {
+          label: first ? `${LUNI[m]} ${ys.slice(2)}` : LUNI[m], tip: cap(`${LUNI_L[m]} ${ys}`),
+          d: new Date(+ys, m, 1), days: (y.n && y.n[ms]) || 0, y: ys }), P, PI));
+      }
+    }
+    let cum = 0, paidAt = null;
+    for (const r of months) { cum += r.gain; r.cum = cum; if (paidAt === null && cum >= inv) paidAt = r; }
+    const rec = cum, left = Math.max(0, inv - rec), pc = Math.min(1, rec / inv);
+    // ritmul: ultimele 12 luni încheiate (un an întreg de anotimpuri); cu istoric mai scurt, tot ce există
+    const t0 = today(), done = months.filter((r) => r.d.getFullYear() * 12 + r.d.getMonth() < t0.getFullYear() * 12 + t0.getMonth());
+    const last = (done.length ? done : months).slice(-12), n12 = last.length, lastDays = last.reduce((a, r) => a + r.days, 0);
+    const rate = lastDays >= 28 ? last.reduce((a, r) => a + r.gain, 0) / lastDays : NaN;
+    const yr12 = { billNo: last.reduce((a, r) => a + r.billNo, 0), bill: last.reduce((a, r) => a + r.bill, 0) };
+    const dl = isFinite(rate) && rate > 0 ? left / rate : NaN;
+    const eta = isFinite(dl) ? new Date(Date.now() + dl * 86400000) : null;
+    const yy = isFinite(dl) ? Math.floor(dl / 365.25) : 0, mm = isFinite(dl) ? Math.round((dl - yy * 365.25) / 30.44) : 0;
+    const span = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const remain = !isFinite(dl) ? '—' : left === 0 ? 'amortizat' : [yy ? span(yy, 'an', 'ani') : '', mm ? span(mm, 'lună', 'luni') : ''].filter(Boolean).join(' ') || 'sub o lună';
+    const roi = isFinite(rate) ? rate * 365.25 / inv : NaN;
+    const st = parse(this._info.start), since = st ? `${st.getDate()} ${LUNI_L[st.getMonth()]} ${st.getFullYear()}` : esc(this._info.start);
+    const kpi = (l, val, u, s = '') => `<div class="box kpi"><div class="l">${l}</div><div class="v">${val}<span class="u">${u}</span></div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+    const sgn = (x) => (x < 0 ? '−' + lei(-x) : lei(x));
+    const take = `De la ${since}, sistemul a adus <b>${lei(rec)} lei</b>: <b>${lei(months.reduce((a, r) => a + r.v.eco, 0))} lei</b> din energia consumată fără s-o cumperi și <b>${lei(months.reduce((a, r) => a + r.v.injv, 0))} lei</b> din energia injectată. `
+      + (paidAt ? `Investiția a fost recuperată în ${LUNI_L[paidAt.d.getMonth()]} ${paidAt.d.getFullYear()}.`
+        : isFinite(rate) ? `În ultimele ${n12} luni încheiate câștigul a fost în medie <b>${lei(rate)} lei/zi</b>; în ritmul ăsta, restul de <b>${lei(left)} lei</b> se recuperează în <b>${remain}</b>.` : '');
+
+    const cols = (r) => `<td class="hn">${lei(r.billNo)}</td><td class="hn">${sgn(r.bill)}</td><td>${lei(r.v.eco)}</td><td>${lei(r.v.injv)}</td><td>${lei(r.gain)}</td>`;
+    const th2 = `<th class="hn">Fără sistem</th><th class="hn">Cu sistem</th>${th('Economii', 'Econ.')}${th('Injecție', 'Inj.')}<th>Câștig</th>`;
+    const mrows = months.slice().reverse().map((r) => `<tr class="go" data-k="${r.k}"><td><span class="hn">${esc(r.tip)}</span><span class="hm">${esc(cap(LUNI[r.d.getMonth()]))} ${r.y.slice(2)}</span></td>${cols(r)}<td class="hn">${lei(r.cum)}</td></tr>`).join('');
+    const years = Object.keys(yrs.years).sort().map((ys) => {
+      const ms = months.filter((r) => r.y === ys), t = { billNo: 0, bill: 0, gain: 0, v: { eco: 0, injv: 0 } };
+      for (const r of ms) { t.billNo += r.billNo; t.bill += r.bill; t.gain += r.gain; t.v.eco += r.v.eco; t.v.injv += r.v.injv; }
+      return `<tr><td>${ys}${ys === String(today().getFullYear()) ? ' <span class="hn" style="color:' + C.muted + '">(în curs)</span>' : ''}</td>${cols(t)}</tr>`;
+    }).join('');
+    const tot = { billNo: months.reduce((a, r) => a + r.billNo, 0), bill: months.reduce((a, r) => a + r.bill, 0), gain: rec, v: { eco: months.reduce((a, r) => a + r.v.eco, 0), injv: months.reduce((a, r) => a + r.v.injv, 0) } };
+
+    this._rows = months; this._tot = sum(months); this._tot.v.eco = tot.v.eco; this._tot.v.injv = tot.v.injv;
+    this._chartList = PAY_CHARTS; this._wide = this._wide || loadWide();
+    w.innerHTML = `<div class="box"><div class="nav"><div class="t">Amortizare</div></div><div class="take">${take}</div></div>
+<div class="box"><div class="hd"><div><div class="ttl">Investiție recuperată</div><div class="note">din ${lei(inv)} lei, de la ${since}</div></div><div class="pct">${F1(pc * 100)}%</div></div>
+ <div class="bar" role="progressbar" aria-label="Investiție recuperată" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${(pc * 100).toFixed(1)}"><i style="width:${(pc * 100).toFixed(2)}%"></i></div>
+ <div class="bl"><span>Recuperat <b>${lei(rec)} lei</b></span><span>Rămas <b>${lei(left)} lei</b></span></div></div>
+<div class="kpis" style="--k:3">${kpi('Câștig mediu', isFinite(rate) ? lei(rate) : '—', 'lei/zi', `${n12 === 12 ? 'ultimele 12 luni încheiate' : `ultimele ${n12} luni`} · ≈ ${isFinite(rate) ? lei(rate * 30.44) : '—'} lei/lună`)}${kpi('Timp rămas', remain, '', 'dacă ritmul se păstrează')}${kpi('Amortizare estimată', paidAt ? cap(`${LUNI_L[paidAt.d.getMonth()]} ${paidAt.d.getFullYear()}`) : eta ? cap(`${LUNI_L[eta.getMonth()]} ${eta.getFullYear()}`) : '—', '', paidAt ? 'investiția e recuperată' : 'luna în care câștigul acoperă investiția')}
+${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite(rate) ? lei(rate * 365.25) : '—'} lei/an din ${lei(inv)} lei`)}${kpi('Fără sistem', lei(yr12.billNo), 'lei', `factura pe ${n12 === 12 ? 'ultimele 12 luni' : `${n12} luni`}, tot consumul din rețea`)}${kpi('Cu sistem', sgn(yr12.bill), 'lei', `factura pe ${n12 === 12 ? 'ultimele 12 luni' : `${n12} luni`}, cu compensarea lunară`)}</div>
+<div class="charts">${PAY_CHARTS.map((c) => this._box(c)).join('')}</div>
+<div class="box"><div class="ttl">Pe luni</div><div class="note">lei · apasă pe o lună pentru detalii</div>
+ <div class="tw"><table><thead><tr><th>Luna</th>${th2}<th class="hn">Recuperat</th></tr></thead><tbody>${mrows}</tbody></table></div></div>
+<h2>Pe ani</h2><div class="box"><div class="tw"><table><thead><tr><th>An</th>${th2}</tr></thead><tbody>${years}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
+<div class="foot">Prețuri din Setări: ${F2(P)} lei/kWh din rețea, ${F2(PI)} lei/kWh injectat, aceleași pentru toată perioada · importul și injecția se compensează lunar · istoric VRM din ${since}</div>`;
+    w.querySelectorAll('tbody tr.go').forEach((tr) => tr.addEventListener('click', () => this._go('luna', parse(tr.dataset.k + '-01'))));
+    w.querySelectorAll('.wb').forEach((b) => b.addEventListener('click', () => this._toggleWide(b)));
+    w.querySelectorAll('.fb').forEach((b) => b.addEventListener('click', () => this._openFs(PAY_CHARTS.find((c) => c.id === b.dataset.c))));
+    this._cws = {}; this._charts();
   }
 
   // ── setări: mărimea textului (per dispozitiv) și automatizarea cu notificări ─
@@ -526,6 +655,7 @@ ${this._yearsTable()}${this._foot()}`;
   <div class="seg">${FZ.map(([l, v]) => `<button data-fz="${v}" aria-pressed="${v === fz}">${l}</button>`).join('')}</div>
   <div class="kpi" style="margin-top:14px"><div class="l">Exemplu</div><div class="v">${kwh(18.4)}<span class="u">kWh</span></div><div class="s">Ø ${kwh(15.9)} kWh/zi</div></div></div>
  <div class="box"><div class="ttl">Notificări</div><div class="note" style="margin:0">Automatizarea ${a.st ? esc(a.st.attributes.friendly_name || a.id) : ''}</div>${notif}</div>
+ ${this._finBox()}
  <div class="box"><div class="ttl">Sincronizare VRM</div>${this._err ? `<div class="note warn" style="margin-top:10px">${esc(this._err)}</div>` : i ? `<dl class="kv">
   <dt>Instalație</dt><dd>${esc(i.site)}</dd>
   <dt>Ultima sincronizare</dt><dd>${esc(stamp(i.synced))}</dd>
@@ -533,6 +663,7 @@ ${this._yearsTable()}${this._foot()}`;
   <dt>Stare</dt><dd class="${i.backfilling ? 'warn' : 'ok'}">${i.backfilling ? 'se descarcă istoricul…' : 'complet'}</dd>
   <dt>Versiune card</dt><dd>${VERSION}</dd></dl>` : ''}</div>
 </div>`;
+    this._wireFin(w);
     w.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
       saveFz(+b.dataset.fz);
       window.dispatchEvent(new Event(FZ_EVENT));
@@ -555,6 +686,37 @@ ${this._yearsTable()}${this._foot()}`;
     });
     this._autoKey = `${a.st ? a.st.state : ''}|${a.last || ''}`;
   }
+  _finBox() {
+    const f = (this._info && this._info.finance) || {}, admin = !this._hass.user || this._hass.user.is_admin;
+    const fld = (k, l, u) => `<div class="fld"><label for="f-${k}">${l}</label><div class="in"><input id="f-${k}" data-k="${k}" type="text" inputmode="decimal" autocomplete="off" value="${f[k] != null ? String(f[k]).replace('.', ',') : ''}"${admin ? '' : ' disabled'}><span>${u}</span></div></div>`;
+    return `<div class="box"><div class="ttl">Investiție și prețuri</div><div class="note" style="margin:0">Folosite în pagina Amortizare, pentru toate dispozitivele</div>
+  ${fld('investment', 'Valoarea investiției', 'lei')}${fld('price_import', 'Preț energie din rețea', 'lei/kWh')}${fld('price_export', 'Preț energie injectată', 'lei/kWh')}
+  <div class="row">${admin ? '<span class="note fst" style="margin:0" role="status"></span><button class="btn fsave">Salvează</button>' : '<span class="note" style="margin:0">Doar un administrator poate schimba valorile.</span>'}</div></div>`;
+  }
+  _wireFin(w) {
+    const save = w.querySelector('.fsave'); if (!save) return;
+    const status = w.querySelector('.fst');
+    save.addEventListener('click', async () => {
+      const msg = { type: 'victron_vrm/finance' };
+      for (const el of w.querySelectorAll('.fld input')) {
+        // acceptă 81.246,17 / 81246,17 / 81246.17
+        let raw = el.value.replace(/\s/g, '');
+        if (raw.includes(',')) raw = raw.replace(/\./g, '').replace(',', '.');
+        const num = raw === '' ? null : Number(raw);
+        if (num !== null && !(num >= 0)) { status.textContent = 'Valorile trebuie să fie numere pozitive, de exemplu 1,11.'; status.className = 'note fst warn'; el.focus(); return; }
+        msg[el.dataset.k] = num;
+      }
+      save.disabled = true; status.textContent = 'Se salvează…'; status.className = 'note fst';
+      try {
+        const res = await this._hass.callWS(this._cfg.entry_id ? { ...msg, entry_id: this._cfg.entry_id } : msg);
+        this._info = { ...this._info, finance: res.finance };
+        status.textContent = 'Salvat'; status.className = 'note fst ok';
+        window.dispatchEvent(new Event(FIN_EVENT));
+      } catch (e) {
+        status.textContent = `Nu am putut salva: ${e.message || e}`; status.className = 'note fst warn';
+      } finally { save.disabled = false; }
+    });
+  }
   // HA trimite `hass` la fiecare schimbare de stare; redesenăm doar când se schimbă automatizarea
   _syncAuto() {
     const a = this._auto(), key = `${a.st ? a.st.state : ''}|${a.last || ''}`;
@@ -576,7 +738,7 @@ ${this._yearsTable()}${this._foot()}`;
     const host = document.createElement('div');
     host.style.setProperty('--fz', this._fz || 1);
     const sr = host.attachShadow({ mode: 'open' });
-    sr.innerHTML = `<style>${CSS}</style><div class="fs"><div class="hd"><div><div class="ttl">${c.ttl} · ${esc(this._title())}</div><div class="note">${c.note} · kWh</div></div>
+    sr.innerHTML = `<style>${CSS}</style><div class="fs"><div class="hd"><div><div class="ttl">${c.ttl} · ${esc(this._title())}</div><div class="note">${c.note} · ${c.unit || 'kWh'}</div></div>
       <div class="tools"><button class="tb xb" title="Închide" aria-label="Închide">${svgI(ICON.close)}</button></div></div>${this._legend(c)}<div class="ch"></div></div>`;
     document.body.appendChild(host);
     const el = sr.querySelector('.ch');

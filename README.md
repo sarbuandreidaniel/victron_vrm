@@ -47,6 +47,20 @@ Câte un card pe view, cu căile `zi`, `saptamana`, `luna`, `an`. Apăsarea pe o
 paths: { zi: azi, saptamana: sapt, luna: luna, an: an }
 ```
 
+### Amortizare
+
+```yaml
+type: custom:victron-vrm-card
+view: amortizare
+```
+
+Cât din investiție s-a recuperat din istoricul VRM, lună cu lună. Câștigul unei luni e diferența dintre factura fără sistem (tot consumul din rețea) și factura cu sistem, cu importul și injecția compensate lunar:
+
+- **economii** = energia consumată fără s-o cumperi (`Pc + Bc − Gb`, adică consum − import) × prețul energiei din rețea
+- **injecție** = energia injectată (`Pg + Bg`) × prețul energiei injectate
+
+Ritmul pentru estimare e media pe zi din ultimele 12 luni încheiate (un an întreg de anotimpuri). Valoarea investiției și cele două prețuri se completează în Setări; se păstrează în integrare (opțiunile intrării), deci sunt aceleași pe toate dispozitivele, și doar un administrator le poate schimba. Prețurile se aplică întregii perioade.
+
 ### Setări
 
 Un al cincilea view cu cardul în modul `setari`:
@@ -59,6 +73,7 @@ automation: automation.energie_vrm_rezumat_zilnic_lunar_si_anual   # opțional
 
 - **Mărime text** — Mică / Normală / Mare / Foarte mare, pentru toate cardurile Energie VRM (inclusiv etichetele graficelor). Se ține minte în browser, deci fiecare dispozitiv o are pe a lui.
 - **Notificări** — pornește sau oprește automatizarea dată în `automation` și o poate rula imediat („Trimite acum”).
+- **Investiție și prețuri** — valoarea investiției (lei), prețul energiei din rețea și al celei injectate (lei/kWh), pentru pagina Amortizare. Acceptă virgulă sau punct zecimal.
 - **Sincronizare VRM** — instalația, ultima sincronizare, de când începe istoricul și dacă se mai descarcă.
 
 ## Servicii
