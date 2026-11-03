@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.5.0';
+const VERSION = '0.7.0';
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#292929', fg: '#ffffff', muted: '#858585',
   grid: '#2a2a2a', axis: '#3a3a3a', pop: '#262626', sel: '#3987e5' };
 // fiecare flux are aceeași culoare în toate graficele
@@ -24,6 +24,12 @@ const svgI = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/
 const WIDE_KEY = 'victron-vrm-wide';
 const loadWide = () => { try { return new Set(JSON.parse(localStorage.getItem(WIDE_KEY) || '[]')); } catch (e) { return new Set(); } };
 const saveWide = (set) => { try { localStorage.setItem(WIDE_KEY, JSON.stringify([...set])); } catch (e) { /* stocare indisponibilă */ } };
+// mărimea textului, tot per dispozitiv (pe telefon poate fi alta decât pe desktop)
+const FZ_KEY = 'victron-vrm-fz';
+const FZ = [['Mică', 0.9], ['Normală', 1], ['Mare', 1.15], ['Foarte mare', 1.3]];
+const loadFz = () => { try { const v = +localStorage.getItem(FZ_KEY); return FZ.some((f) => f[1] === v) ? v : 1; } catch (e) { return 1; } };
+const saveFz = (v) => { try { localStorage.setItem(FZ_KEY, String(v)); } catch (e) { /* stocare indisponibilă */ } };
+const FZ_EVENT = 'victron-vrm-fz';
 const nf = (d) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: d, maximumFractionDigits: d });
 const F0 = nf(0).format, F1 = nf(1).format;
 const kwh = (v) => (v >= 100 ? F0(v) : F1(v));
@@ -35,6 +41,7 @@ const iso = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())
 const parse = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const monday = (d) => addDays(d, -((d.getDay() + 6) % 7));
+const stamp = (t) => { if (!t) return 'niciodată'; const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}, ${d.getDate()} ${LUNI[d.getMonth()]} ${d.getFullYear()}`; };
 const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
 
 // un rând = valorile brute VRM + mărimile derivate
@@ -67,8 +74,8 @@ function sum(rows, k = 'p') {
 
 // bare stivuite în sus / în jos, cu linie opțională; întoarce SVG
 function barChart(W, H, rows, o) {
-  const up = o.up || [], down = o.down || [], line = o.line;
-  const ml = 40, mr = 8, mt = 10, mb = 24, iw = W - ml - mr, ih = H - mt - mb;
+  const up = o.up || [], down = o.down || [], line = o.line, fz = o.fz || 1, fs = Math.round(11 * fz);
+  const ml = Math.round(40 * fz), mr = 8, mt = 10, mb = Math.round(24 * fz), iw = W - ml - mr, ih = H - mt - mb;
   const val = (r, c) => r.v[c];
   const maxUp = Math.max(0.1, ...rows.map((r) => Math.max(up.reduce((a, c) => a + val(r, c), 0), line ? r[line] : 0)));
   const maxDn = down.length ? Math.max(0.1, ...rows.map((r) => down.reduce((a, c) => a + val(r, c), 0))) : 0;
@@ -82,9 +89,9 @@ function barChart(W, H, rows, o) {
   let g = '';
   for (const v of vals) {
     g += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="${C.grid}" stroke-width="1"/>`;
-    g += `<text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end" fill="${C.muted}" font-size="11">${tf(Math.abs(v))}</text>`;
+    g += `<text x="${ml - 6}" y="${y(v) + fs * 0.36}" text-anchor="end" fill="${C.muted}" font-size="${fs}">${tf(Math.abs(v))}</text>`;
   }
-  const every = Math.max(1, Math.ceil(rows.length / Math.max(2, Math.floor(iw / (o.labelW || 46)))));
+  const every = Math.max(1, Math.ceil(rows.length / Math.max(2, Math.floor(iw / ((o.labelW || 46) * fz)))));
   const rr = Math.min(3, bw / 2);
   rows.forEach((r, i) => {
     const x = ml + i * step + (step - bw) / 2;
@@ -95,7 +102,7 @@ function barChart(W, H, rows, o) {
     acc = 0;
     const dns = down.filter((c) => val(r, c) > 0);
     dns.forEach((c, j) => { const v = val(r, c), h = y(-acc - v) - y(-acc); g += `<rect x="${x}" y="${y(-acc) + (j ? 1 : 0)}" width="${bw}" height="${Math.max(0, h - (j ? 1 : 0))}" fill="${FLOW[c]}"${j === dns.length - 1 ? ` rx="${rr}"` : ''}/>`; acc += v; });
-    if (i % every === 0) g += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" fill="${C.muted}" font-size="11">${o.label(r)}</text>`;
+    if (i % every === 0) g += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" fill="${C.muted}" font-size="${fs}">${o.label(r)}</text>`;
   });
   if (line && rows.length) {
     // linia trece doar prin rândurile cu date (lunile fără istoric rămân goale)
@@ -121,7 +128,7 @@ const CHARTS = [
     names: { Pe: 'Din solar', Be: 'Din baterie', Ge: 'Din rețea' } },
 ];
 
-const CSS = `
+const RAW_CSS = `
 :host{display:block}
 .w{max-width:1404px;margin:0 auto;font-family:Roboto,Helvetica,system-ui,sans-serif;color:${C.fg};background:${C.page};border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .box{background:${C.panel};border:1px solid ${C.border};border-radius:6px;padding:16px;position:relative}
@@ -137,7 +144,7 @@ h2{font-size:17px;font-weight:500;margin:10px 0 0;color:${C.fg}}
 h2 small{font-weight:400;color:${C.muted};font-size:13px;margin-left:8px}
 .ttl{color:${C.fg};font-size:15px;font-weight:500;margin:0 0 4px}
 .note{color:${C.muted};font-size:12px;margin:0 0 10px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(max(132px,calc((100% - (var(--k,8) - 1) * 12px) / var(--k,8))),1fr));gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(max(calc(132px * var(--fz,1)),calc((100% - (var(--k,8) - 1) * 12px) / var(--k,8))),1fr));gap:12px}
 .kpi .l{color:${C.muted};font-size:12px}
 .kpi .v{font-family:Georgia,'Times New Roman',serif;font-size:28px;font-weight:400;margin-top:6px;font-variant-numeric:tabular-nums}
 .kpi .u{font-family:Roboto,Helvetica,system-ui,sans-serif;color:${C.muted};font-size:12px;margin-left:4px}
@@ -176,8 +183,30 @@ tr.nil td{color:${C.muted}}
 .hm{display:none}
 .msg{color:${C.muted};font-size:14px;padding:30px;text-align:center}
 .foot{color:${C.muted};font-size:12px;text-align:right}
+.set{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.seg button{background:transparent;color:${C.fg};border:1px solid ${C.border};border-radius:6px;min-height:34px;padding:0 12px;font:inherit;font-size:14px;cursor:pointer}
+.seg button:hover{background:#2a2a2a}
+.seg button[aria-pressed="true"]{border-color:${C.sel};background:rgba(57,135,229,.18)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}
+.row .l{font-size:14px}
+.sw{position:relative;width:46px;height:26px;border-radius:13px;border:1px solid ${C.border};background:#333;cursor:pointer;flex-shrink:0;padding:0;transition:background .15s}
+.sw::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#bbb;transition:transform .15s}
+.sw[aria-checked="true"]{background:${C.sel};border-color:${C.sel}}
+.sw[aria-checked="true"]::after{transform:translateX(20px);background:#fff}
+.sw:disabled{opacity:.4;cursor:default}
+.btn{background:transparent;color:${C.fg};border:1px solid ${C.border};border-radius:6px;min-height:34px;padding:0 12px;font:inherit;font-size:14px;cursor:pointer}
+.btn:hover:not(:disabled){background:#2a2a2a}
+.btn:disabled{opacity:.4;cursor:default}
+ul.sch{margin:8px 0 0;padding-left:18px;color:${C.muted};font-size:13px;line-height:1.6}
+dl.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:10px 0 0;font-size:14px}
+dl.kv dt{color:${C.muted}}
+dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.ok{color:#3fae3f}.warn{color:#c98500}
 @media (max-width:700px){.w{padding:8px}.hm{display:inline}.hn{display:none}.kpi .v{font-size:24px}.nav .t{font-size:20px}table{font-size:13px}th,td{padding:6px 4px}}
 `;
+// toate mărimile de text urmează --fz (setat pe gazda cardului din Setări)
+const CSS = RAW_CSS.replace(/font-size:(\d+)px/g, 'font-size:calc($1px * var(--fz,1))');
 
 class VictronVrmCard extends HTMLElement {
   constructor() {
@@ -195,7 +224,7 @@ class VictronVrmCard extends HTMLElement {
     }
   }
   setConfig(config) {
-    const view = VIEWS.includes(config.view) ? config.view : 'zi';
+    const view = VIEWS.includes(config.view) || config.view === 'setari' ? config.view : 'zi';
     this._cfg = { paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an' }, ...config, view };
     this._cache = new Map();
     // la upgrade, setConfig vine după connectedCallback și după hass
@@ -214,12 +243,33 @@ class VictronVrmCard extends HTMLElement {
     }
     const d = parse(new URLSearchParams(location.search).get('d'));
     if (d) this._d = d; else if (!this._d) this._d = today();
+    this._fz = null; this._applyFz();
+    this._onFz = () => this._applyFz();
+    window.addEventListener(FZ_EVENT, this._onFz);
+    window.addEventListener('storage', this._onFz);
     this._timer = setInterval(() => this._load(true), 5 * 60 * 1000);
     this._load();
   }
-  disconnectedCallback() { clearInterval(this._timer); this._closeFs(); }
-  set hass(h) { const first = !this._hass; this._hass = h; if (first && this._d) this._load(); }
+  disconnectedCallback() {
+    clearInterval(this._timer); this._closeFs();
+    window.removeEventListener(FZ_EVENT, this._onFz);
+    window.removeEventListener('storage', this._onFz);
+  }
+  set hass(h) {
+    const first = !this._hass; this._hass = h;
+    if (first && this._d) this._load();
+    else if (this._settings()) this._syncAuto();
+  }
   get hass() { return this._hass; }
+  _settings() { return this._cfg && this._cfg.view === 'setari'; }
+  _applyFz() {
+    const fz = loadFz();
+    if (fz === this._fz) return;
+    this._fz = fz;
+    this.style.setProperty('--fz', fz);
+    this._cws = {}; this._charts();
+    if (this._settings()) this._renderSettings();
+  }
 
   // ── perioada afișată ───────────────────────────────────────────────
   _range() {
@@ -268,6 +318,11 @@ class VictronVrmCard extends HTMLElement {
   }
   async _load(refresh = false) {
     const h = this._hass; if (!h || !this._d || !this._cfg) return;
+    if (this._settings()) {
+      if (refresh) return;
+      try { this._info = await this._ws({ type: 'victron_vrm/info' }, true); this._err = null; } catch (e) { this._err = e && e.message ? e.message : String(e); }
+      return this._renderSettings();
+    }
     const seq = (this._seq = (this._seq || 0) + 1);
     const { from, to } = this._range(), v = this._cfg.view, t = today();
     const live = from <= t && t <= to;
@@ -423,7 +478,7 @@ ${this._yearsTable()}${this._foot()}`;
     // barele cresc odată cu graficul (lățime dublă / ecran complet), până la 2,5×
     const maxBar = Math.round({ zi: 18, saptamana: 40, luna: 16, an: 36 }[v] * Math.min(2.5, Math.max(1, W / 640)));
     const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
-    const svg = barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : 34, click: !!drill });
+    const svg = barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : 34, click: !!drill, fz: this._fz || 1 });
     el.innerHTML = svg + '<div class="tip" hidden></div>';
     const tip = el.querySelector('.tip'), hl = el.querySelector('.hl');
     el.querySelectorAll('.hit').forEach((hit) => {
@@ -443,12 +498,76 @@ ${this._yearsTable()}${this._foot()}`;
     });
   }
 
+  // ── setări: mărimea textului (per dispozitiv) și automatizarea cu notificări ─
+  _auto() {
+    const id = this._cfg.automation, st = id && this._hass ? this._hass.states[id] : null;
+    return { id, st, on: !!st && st.state === 'on', last: st && st.attributes.last_triggered };
+  }
+  _renderSettings() {
+    const w = this.shadowRoot && this.shadowRoot.querySelector('.w'); if (!w || !this._hass) return;
+    const fz = this._fz || loadFz(), a = this._auto(), i = this._info;
+    const st = i ? parse(i.start) : null;
+    let notif;
+    if (!a.id) notif = `<div class="note" style="margin-top:10px">Adaugă în configurația cardului <code>automation: automation.…</code> cu automatizarea care trimite rezumatele.</div>`;
+    else if (!a.st) notif = `<div class="note warn" style="margin-top:10px">Automatizarea ${esc(a.id)} nu există.</div>`;
+    else notif = `<div class="row"><span class="l">Trimite rezumatele pe telefon</span><button class="sw" role="switch" aria-checked="${a.on}" aria-label="Notificări"></button></div>
+      <ul class="sch"><li>în fiecare zi la 8:00, rezumatul zilei de ieri</li><li>pe 1 ale lunii, și rezumatul lunii trecute</li><li>pe 1 ianuarie, și rezumatul anului trecut</li></ul>
+      <div class="row"><span class="note" style="margin:0">Ultima trimitere: <span class="lt">${esc(stamp(a.last))}</span></span><button class="btn test">Trimite acum</button></div>`;
+    w.innerHTML = `<div class="box"><div class="nav"><div class="t">Setări</div></div></div>
+<div class="set">
+ <div class="box"><div class="ttl">Mărime text</div><div class="note">Se aplică tuturor paginilor Energie VRM, doar pe acest dispozitiv</div>
+  <div class="seg">${FZ.map(([l, v]) => `<button data-fz="${v}" aria-pressed="${v === fz}">${l}</button>`).join('')}</div>
+  <div class="kpi" style="margin-top:14px"><div class="l">Exemplu</div><div class="v">${kwh(18.4)}<span class="u">kWh</span></div><div class="s">Ø ${kwh(15.9)} kWh/zi</div></div></div>
+ <div class="box"><div class="ttl">Notificări</div><div class="note" style="margin:0">Automatizarea ${a.st ? esc(a.st.attributes.friendly_name || a.id) : ''}</div>${notif}</div>
+ <div class="box"><div class="ttl">Sincronizare VRM</div>${this._err ? `<div class="note warn" style="margin-top:10px">${esc(this._err)}</div>` : i ? `<dl class="kv">
+  <dt>Instalație</dt><dd>${esc(i.site)}</dd>
+  <dt>Ultima sincronizare</dt><dd>${esc(stamp(i.synced))}</dd>
+  <dt>Istoric din</dt><dd>${st ? `${st.getDate()} ${LUNI[st.getMonth()]} ${st.getFullYear()}` : esc(i.start)}</dd>
+  <dt>Stare</dt><dd class="${i.backfilling ? 'warn' : 'ok'}">${i.backfilling ? 'se descarcă istoricul…' : 'complet'}</dd>
+  <dt>Versiune card</dt><dd>${VERSION}</dd></dl>` : ''}</div>
+</div>`;
+    w.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+      saveFz(+b.dataset.fz);
+      window.dispatchEvent(new Event(FZ_EVENT));
+    }));
+    const sw = w.querySelector('.sw');
+    if (sw) sw.addEventListener('click', () => {
+      const on = sw.getAttribute('aria-checked') !== 'true';
+      sw.disabled = true;
+      this._hass.callService('automation', on ? 'turn_on' : 'turn_off', { entity_id: a.id })
+        .catch((e) => console.error('victron-vrm-card: automatizarea nu a putut fi schimbată', e))
+        .finally(() => { sw.disabled = false; });
+    });
+    const test = w.querySelector('.test');
+    if (test) test.addEventListener('click', () => {
+      test.disabled = true; test.textContent = 'Se trimite…';
+      this._hass.callService('automation', 'trigger', { entity_id: a.id, skip_condition: true })
+        .then(() => { test.textContent = 'Trimis'; })
+        .catch(() => { test.textContent = 'Eroare'; })
+        .finally(() => setTimeout(() => { test.disabled = false; test.textContent = 'Trimite acum'; }, 3000));
+    });
+    this._autoKey = `${a.st ? a.st.state : ''}|${a.last || ''}`;
+  }
+  // HA trimite `hass` la fiecare schimbare de stare; redesenăm doar când se schimbă automatizarea
+  _syncAuto() {
+    const a = this._auto(), key = `${a.st ? a.st.state : ''}|${a.last || ''}`;
+    if (key === this._autoKey) return;
+    const w = this.shadowRoot && this.shadowRoot.querySelector('.w');
+    const sw = w && w.querySelector('.sw');
+    if (sw && a.st && this._autoKey !== undefined) {
+      sw.setAttribute('aria-checked', a.on);
+      const lt = w.querySelector('.lt'); if (lt) lt.textContent = stamp(a.last);
+      this._autoKey = key;
+    } else this._renderSettings();
+  }
+
   // ── ecran complet: un strat peste toată pagina, în afara cardului ───
   // (pe iPhone nu există Fullscreen API pentru elemente, așa că stratul acoperă oricum ecranul)
   _openFs(c) {
     if (!c || !this._rows) return;
     this._closeFs();
     const host = document.createElement('div');
+    host.style.setProperty('--fz', this._fz || 1);
     const sr = host.attachShadow({ mode: 'open' });
     sr.innerHTML = `<style>${CSS}</style><div class="fs"><div class="hd"><div><div class="ttl">${c.ttl} · ${esc(this._title())}</div><div class="note">${c.note} · kWh</div></div>
       <div class="tools"><button class="tb xb" title="Închide" aria-label="Închide">${svgI(ICON.close)}</button></div></div>${this._legend(c)}<div class="ch"></div></div>`;

@@ -47,6 +47,20 @@ Câte un card pe view, cu căile `zi`, `saptamana`, `luna`, `an`. Apăsarea pe o
 paths: { zi: azi, saptamana: sapt, luna: luna, an: an }
 ```
 
+### Setări
+
+Un al cincilea view cu cardul în modul `setari`:
+
+```yaml
+type: custom:victron-vrm-card
+view: setari
+automation: automation.energie_vrm_rezumat_zilnic_lunar_si_anual   # opțional
+```
+
+- **Mărime text** — Mică / Normală / Mare / Foarte mare, pentru toate cardurile Energie VRM (inclusiv etichetele graficelor). Se ține minte în browser, deci fiecare dispozitiv o are pe a lui.
+- **Notificări** — pornește sau oprește automatizarea dată în `automation` și o poate rula imediat („Trimite acum”).
+- **Sincronizare VRM** — instalația, ultima sincronizare, de când începe istoricul și dacă se mai descarcă.
+
 ## Servicii
 
 `victron_vrm.resync` — descarcă din nou lunile dintre `start_date` și `end_date` (implicit azi).
