@@ -64,7 +64,8 @@ fi
 
 # 3. commit + push
 git add -A
-git commit -q -m "$MSG"
+# after a --dry-run followed by a manual commit there may be nothing left to commit
+if git diff --cached --quiet; then echo "nothing new to commit; pushing what is on main"; else git commit -q -m "$MSG"; fi
 git push -q origin main
 echo "pushed $(git rev-parse --short HEAD)"
 
