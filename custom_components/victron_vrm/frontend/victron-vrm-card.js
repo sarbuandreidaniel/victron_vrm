@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.11.1';
+const VERSION = '0.11.2';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -26,7 +26,7 @@ const ICON = { wide: 'M9,11H15V8L19,12L15,16V13H9V16L5,12L9,8V11M2,20V4H4V20H2M2
   close: 'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z' };
 // pe telefon antetele tabelelor sunt prescurtate, ca toate coloanele să încapă pe lățime
 const th = (full, short, unit = '', cls = '') => `<th${cls ? ` class="${cls}"` : ''}><span class="hn">${full}</span><span class="hm">${short}</span>${unit ? `<small>${unit}</small>` : ''}</th>`;
-const HEAD = (ev) => `${th('Producție', 'Prod.')}<th>Casă</th>${ev ? th('Mașină', 'Maș.') : ''}${th('Import', 'Imp.')}${th('Injecție', 'Inj.')}<th class="hn">Încărcare</th><th class="hn">Descărcare</th>${th('Independență', 'Indep.')}<th class="hn">Autoconsum</th>`;
+const HEAD = (ev) => `${th('Producție', 'Prod.', 'kWh')}${th('Casă', 'Casă', 'kWh')}${ev ? th('Mașină', 'Maș.', 'kWh') : ''}${th('Import', 'Imp.', 'kWh')}${th('Injecție', 'Inj.', 'kWh')}${th('Încărcare', '', 'kWh', 'hn')}${th('Descărcare', '', 'kWh', 'hn')}${th('Independență', 'Indep.', '%')}${th('Autoconsum', '', '%', 'hn')}`;
 const svgI = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 // graficele lățite se țin minte în browser (preferință per vizitator)
 const WIDE_KEY = 'victron-vrm-wide';
@@ -44,6 +44,7 @@ const F0 = nf(0).format, F1 = nf(1).format, F2 = nf(2).format;
 const lei = (v) => (Math.abs(v) >= 1000 ? F0(v) : F2(v));
 const kwh = (v) => (v >= 100 ? F0(v) : F1(v));
 const pct = (v) => (isFinite(v) ? F0(v * 100) + '%' : '—');
+const pctN = (v) => (isFinite(v) ? F0(v * 100) : '—');
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = (n) => String(n).padStart(2, '0');
@@ -537,7 +538,7 @@ class VictronVrmCard extends HTMLElement {
       + (showLoss && tot.loss > 0 ? ` Invertoarele, conversiile și bateria au pierdut <b>${kwh(tot.loss)} kWh</b>, în medie <b>${isFinite(lossW) ? F0(lossW) : '—'} W</b> continuu.` : '');
 
     const first = { zi: 'Ora', saptamana: 'Ziua', luna: 'Ziua', an: 'Luna' }[v];
-    const cols = (r) => `<td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td>`;
+    const cols = (r) => `<td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pctN(r.indep)}</td><td class="hn">${pctN(r.autoc)}</td>`;
     const head = (f) => `<thead><tr><th>${f}</th>${HEAD(hasEv)}</tr></thead>`;
     const drill = v === 'an' ? 'luna' : v === 'zi' ? null : 'zi';
     const body = rows.filter((r) => r.any || (v !== 'an' && !r.future)).map((r) => {
@@ -551,9 +552,9 @@ class VictronVrmCard extends HTMLElement {
     const nk = 8 + (hasEv ? 1 : 0) + (showLoss ? 1 : 0);
     w.innerHTML = nav + `
 <div class="kpis" style="--k:${nk > 8 ? Math.ceil(nk / 2) : nk}">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.house), 'kWh', hasEv ? 'fără mașină' + (v === 'zi' ? '' : ' · ' + avg(tot.house)) : avg(tot.house))}${hasEv ? kpi('Stația de încărcare', kwh(tot.ev), 'kWh', `${share(tot.v.Pe + tot.v.Be, tot.ev)} din solar + baterie`) : ''}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
-${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pct(tot.indep), '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pct(tot.autoc), '', 'producție folosită în casă sau baterie')}</div>
+${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pctN(tot.indep), isFinite(tot.indep) ? '%' : '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pctN(tot.autoc), isFinite(tot.autoc) ? '%' : '', 'producție folosită în casă sau baterie')}</div>
 <div class="charts">${CHARTS.filter((c) => !c.ev || hasEv).map(box).join('')}</div>
-<div class="box"><div class="ttl">${{ zi: 'Pe ore', saptamana: 'Pe zile', luna: 'Pe zile', an: 'Pe luni' }[v]}</div><div class="note">kWh${drill ? ' · apasă pe un rând pentru detalii' : ''}</div>
+<div class="box"><div class="ttl">${{ zi: 'Pe ore', saptamana: 'Pe zile', luna: 'Pe zile', an: 'Pe luni' }[v]}</div>${drill ? '<div class="note">Apasă pe un rând pentru detalii</div>' : ''}
  <div class="tw"><table>${head(first)}<tbody>${body}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
 ${this._yearsTable()}${this._foot()}`;
     w.querySelector('.take').innerHTML = take;
@@ -566,7 +567,7 @@ ${this._yearsTable()}${this._foot()}`;
   _yearsTable() {
     if (this._cfg.view !== 'an' || !this._years || !this._years.length) return '';
     const y = String(this._d.getFullYear()), hasEv = this._years.some((r) => r.ev > 0);
-    const rows = this._years.map((r) => `<tr class="go${r.k === y ? ' sel' : ''}" data-y="${r.k}"><td>${r.k}${r.k === String(today().getFullYear()) ? ' <span class="hn" style="color:' + C.muted + '">(în curs)</span>' : ''}</td><td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pct(r.indep)}</td><td class="hn">${pct(r.autoc)}</td></tr>`).join('');
+    const rows = this._years.map((r) => `<tr class="go${r.k === y ? ' sel' : ''}" data-y="${r.k}"><td>${r.k}${r.k === String(today().getFullYear()) ? ' <span class="hn" style="color:' + C.muted + '">(în curs)</span>' : ''}</td><td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pctN(r.indep)}</td><td class="hn">${pctN(r.autoc)}</td></tr>`).join('');
     return `<h2>Pe ani<small>apasă pe un an pentru lunile lui</small></h2><div class="box"><div class="tw"><table><thead><tr><th>An</th>${HEAD(hasEv)}</tr></thead><tbody class="yrs">${rows}</tbody></table></div></div>`;
   }
   _foot() {
@@ -585,7 +586,8 @@ ${this._yearsTable()}${this._foot()}`;
   }
   _legend(c) {
     const tot = this._tot;
-    return `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${(c.num || kwh)(tot.v[k])}</b></span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b></span>` : ''}</div>`;
+    const u = c.unit || 'kWh';
+    return `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${(c.num || kwh)(tot.v[k])}</b> ${u}</span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b> kWh</span>` : ''}</div>`;
   }
   _box(c) {
     const wide = this._wide.has(c.id), lbl = wide ? 'Lățime normală' : 'Lățime dublă';
@@ -812,7 +814,7 @@ ${this._yearsTable()}${this._foot()}`;
 
     this._rows = rows; this._tot = tot; this._chartList = EV_CHARTS; this._wide = this._wide || loadWide();
     w.innerHTML = nav + live + `
-<div class="kpis" style="--k:4">${kpi('Energie primită', kwh(ev), 'kWh', n ? `${n} ${n === 1 ? 'sesiune' : 'sesiuni'} · Ø ${kwh(ev / n)} kWh/sesiune` : 'nicio sesiune')}${kpi('Din solar și baterie', ev > 0 ? pct((sol + bat) / ev) : '—', '', `${kwh(sol)} kWh solar · ${kwh(bat)} kWh baterie`)}${kpi('Din rețea', kwh(grid), 'kWh', isFinite(P) ? `${lei(grid * P)} lei, la ${F2(P)} lei/kWh` : 'completează prețul în Setări')}${kpi('Economie', isFinite(P) ? lei((sol + bat) * P) : '—', 'lei', isFinite(P) ? `doar din rețea ar fi costat ${lei(ev * P)} lei` : '')}</div>
+<div class="kpis" style="--k:4">${kpi('Energie primită', kwh(ev), 'kWh', n ? `${n} ${n === 1 ? 'sesiune' : 'sesiuni'} · Ø ${kwh(ev / n)} kWh/sesiune` : 'nicio sesiune')}${kpi('Din solar și baterie', ev > 0 ? pctN((sol + bat) / ev) : '—', ev > 0 ? '%' : '', `${kwh(sol)} kWh solar · ${kwh(bat)} kWh baterie`)}${kpi('Din rețea', kwh(grid), 'kWh', isFinite(P) ? `${lei(grid * P)} lei, la ${F2(P)} lei/kWh` : 'completează prețul în Setări')}${kpi('Economie', isFinite(P) ? lei((sol + bat) * P) : '—', 'lei', isFinite(P) ? `doar din rețea ar fi costat ${lei(ev * P)} lei` : '')}</div>
 <div class="charts">${EV_CHARTS.map((c) => this._box(c)).join('')}</div>
 <div class="box"><div class="ttl">Sesiuni de încărcare</div><div class="note">Reconstituite din datele orare VRM, deci pe ore întregi · apasă pe o sesiune pentru ziua respectivă</div>
  ${n ? `<div class="tw"><table><thead><tr><th>Ziua</th><th class="hn">Interval</th>${th('Total', 'Tot.', 'kWh')}${srcH}${th('Cost rețea', '', 'lei', 'hn')}</tr></thead><tbody>${srows}</tbody></table></div>` : `<div class="note" style="margin:0">Nicio sesiune în ${per}.</div>`}</div>
@@ -880,7 +882,7 @@ ${mrows ? `<h2>Pe luni<small>apasă pe o lună</small></h2><div class="box"><div
         : isFinite(rate) ? `În ultimele ${n12} luni încheiate câștigul a fost în medie <b>${lei(rate)} lei/zi</b>${atNow}; în ritmul ăsta, restul de <b>${lei(left)} lei</b> se recuperează în <b>${remain}</b>.` : '');
 
     const cols = (r) => `<td class="hn">${lei(r.billNo)}</td><td class="hn">${sgn(r.bill)}</td><td>${lei(r.v.eco)}</td><td>${lei(r.v.injv)}</td><td>${lei(r.gain)}</td>`;
-    const th2 = `<th class="hn">Fără sistem</th><th class="hn">Cu sistem</th>${th('Economii', 'Econ.')}${th('Injecție', 'Inj.')}<th>Câștig</th>`;
+    const th2 = `${th('Fără sistem', '', 'lei', 'hn')}${th('Cu sistem', '', 'lei', 'hn')}${th('Economii', 'Econ.', 'lei')}${th('Injecție', 'Inj.', 'lei')}${th('Câștig', 'Câștig', 'lei')}`;
     const mrows = months.slice().reverse().map((r) => `<tr class="go" data-k="${r.k}" title="Preț ${F2(r.P)} lei/kWh din rețea, ${F2(r.PI)} lei/kWh injecție"><td><span class="hn">${esc(r.tip)}</span><span class="hm">${esc(cap(LUNI[r.d.getMonth()]))} ${r.y.slice(2)}</span></td>${cols(r)}<td class="hn">${lei(r.cum)}</td></tr>`).join('');
     const years = Object.keys(yrs.years).sort().map((ys) => {
       const ms = months.filter((r) => r.y === ys), t = { billNo: 0, bill: 0, gain: 0, v: { eco: 0, injv: 0 } };
@@ -898,8 +900,8 @@ ${mrows ? `<h2>Pe luni<small>apasă pe o lună</small></h2><div class="box"><div
 <div class="kpis" style="--k:3">${kpi('Câștig mediu', isFinite(rate) ? lei(rate) : '—', 'lei/zi', `${n12 === 12 ? 'ultimele 12 luni încheiate' : `ultimele ${n12} luni`}${atNow} · ≈ ${isFinite(rate) ? lei(rate * 30.44) : '—'} lei/lună`)}${kpi('Timp rămas', remain, '', 'dacă ritmul se păstrează')}${kpi('Amortizare estimată', paidAt ? cap(`${LUNI_L[paidAt.d.getMonth()]} ${paidAt.d.getFullYear()}`) : eta ? cap(`${LUNI_L[eta.getMonth()]} ${eta.getFullYear()}`) : '—', '', paidAt ? 'investiția e recuperată' : 'luna în care câștigul acoperă investiția')}
 ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite(rate) ? lei(rate * 365.25) : '—'} lei/an din ${lei(inv)} lei`)}${kpi('Fără sistem', lei(yr12.billNo), 'lei', `factura pe ${n12 === 12 ? 'ultimele 12 luni' : `${n12} luni`}, tot consumul din rețea`)}${kpi('Cu sistem', sgn(yr12.bill), 'lei', `factura pe ${n12 === 12 ? 'ultimele 12 luni' : `${n12} luni`}, cu compensarea lunară`)}</div>
 <div class="charts">${PAY_CHARTS.map((c) => this._box(c)).join('')}</div>
-<div class="box"><div class="ttl">Pe luni</div><div class="note">lei · apasă pe o lună pentru detalii</div>
- <div class="tw"><table><thead><tr><th>Luna</th>${th2}<th class="hn">Recuperat</th></tr></thead><tbody>${mrows}</tbody></table></div></div>
+<div class="box"><div class="ttl">Pe luni</div><div class="note">Apasă pe o lună pentru detalii</div>
+ <div class="tw"><table><thead><tr><th>Luna</th>${th2}${th('Recuperat', '', 'lei', 'hn')}</tr></thead><tbody>${mrows}</tbody></table></div></div>
 <h2>Pe ani</h2><div class="box"><div class="tw"><table><thead><tr><th>An</th>${th2}</tr></thead><tbody>${years}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
 <div class="foot">${list.length > 1 ? `Prețuri din Setări: fiecare lună cu prețul ei, acum ${F2(P)} lei/kWh din rețea și ${F2(PI)} lei/kWh injectat` : `Preț din Setări: ${F2(P)} lei/kWh din rețea, ${F2(PI)} lei/kWh injectat, pentru toată perioada`} · importul și injecția se compensează lunar · istoric VRM din ${since}</div>`;
     w.querySelectorAll('tbody tr.go').forEach((tr) => tr.addEventListener('click', () => this._go('luna', parse(tr.dataset.k + '-01'))));

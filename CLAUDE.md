@@ -105,6 +105,7 @@ In the Claude desktop app, point `.claude/launch.json` at that command and use `
 
 - Dark palette with measured contrast on the panel `#1f1f1f`: text `#fff`, soft `#c7c7c7`, muted `#a3a3a3` (6.5:1), control borders `#6b6b6b` (3.1:1), focus `#5aa0f0`, primary button `#2f72d0` with white text (4.7:1).
 - One fixed colour per flow in every chart (`FLOW`); text never in series colours; legends always shown; validate any new chart colour for colour-vision deficiencies.
+- Units are always visible where the number is: in tables under each column name (`th(long, short, unit, cls)`; cells hold bare numbers, percentages without `%`), in KPIs as the small unit beside the value, in chart legends right after each total. No separate "kWh · …" or "lei" notes.
 - Font sizes are plain `font-size:Npx` in the CSS; the card rewrites them to follow the per-device size from Setări (`--fz`).
 - Phones (≤ 700 px): one column, short table headers via `th(long, short)`, columns hidden with `.hn`, no horizontal scroll.
 - Money and price inputs are `type=text inputmode=decimal` parsed by `parseNum` (accepts `81.246,17`, `81246,17`, `81246.17`); number inputs drop Romanian decimals.
