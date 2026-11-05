@@ -57,7 +57,7 @@ car: electric_vehicle_id_40      # opțional: mașina raportată de stație (niv
 ```
 
 - **Stația acum**: starea, puterea și curentul, nivelul bateriei mașinii față de țintă, ultima sesiune. Din card se poate porni sau opri încărcarea, schimba modul (Manual / Automat / Programat), curentul de încărcare (6–32 A) și pornirea automată la conectare. Entitățile se iau din prefix (`sensor.<charger>_status`, `switch.<charger>_ev_charging`, `select.<charger>_mode`, `number.<charger>_charge_current_setpoint` …); oricare se poate schimba cu `entities: { status: sensor.… }`.
-- **Istoricul, lună cu lună** (‹ ›): energia primită de mașină după sursă (solar / baterie / rețea), pe zile și pe orele zilei, sesiunile de încărcare (reconstituite din datele orare VRM) și toate lunile cu încărcări. Costul folosește prețul energiei din rețea din Setări pentru fiecare lună.
+- **Istoricul, lună cu lună** (‹ ›): energia primită de mașină după sursă (solar / baterie / rețea), pe zile și pe orele zilei, sesiunile de încărcare (reconstituite din datele orare VRM), toate lunile cu încărcări și o statistică pe ani (energie după sursă, sesiuni, media pe sesiune, cost și economie). Costul folosește prețul energiei din rețea din Setări pentru fiecare lună.
 
 ### Amortizare
 

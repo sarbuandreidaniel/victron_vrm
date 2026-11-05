@@ -5,7 +5,7 @@
   Serve the repository root and open this page:
       python3 -m http.server 8765 -d integrations/victron_vrm
       http://localhost:8765/scripts/harness/?view=amortizare      (zi | saptamana | luna | an | masina | amortizare | setari)
-  Optional: &d=2026-07-14 (shown date), &admin=0 (non-admin user), &ev=charging (charger status for the
+  Optional: &d=2026-07-14 (shown date), &admin=0 (non-admin user), &evfrom=2025-11-01 (first EV day), &ev=charging (charger status for the
   Mașina view: disconnected | connected | charging | charged | waiting_for_sun | overheating_detected | unavailable).
 
   The data is generated below by a small deterministic model (7 kW solar, 20 kWh battery, EV charger
@@ -21,7 +21,9 @@
 <script>
 (() => {
   const CODES = ['Pc', 'Pb', 'Pg', 'Bc', 'Bg', 'Gc', 'Gb', 'Pe', 'Be', 'Ge'];
-  const START = new Date(2025, 9, 22), EV_FROM = new Date(2026, 9, 12);
+  const q = new URLSearchParams(location.search);
+  const evFrom = /^\d{4}-\d{2}-\d{2}$/.test(q.get('evfrom') || '') ? q.get('evfrom').split('-').map(Number) : [2026, 10, 12];
+  const START = new Date(2025, 9, 22), EV_FROM = new Date(evFrom[0], evFrom[1] - 1, evFrom[2]);
   const p2 = (n) => String(n).padStart(2, '0');
   const iso = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
   // pseudo-aleator determinist, ca fiecare încărcare să arate aceleași cifre
@@ -65,7 +67,6 @@
     Y.t = add(Y.t, t); Y.m[m] = add(Y.m[m] || zero(), t); Y.n[m] = (Y.n[m] || 0) + 1;
   }
 
-  const q = new URLSearchParams(location.search);
   const view = q.get('view') || 'zi';
   const evs = q.get('ev') || 'charging', live = evs === 'charging';
   const S = (state, attributes = {}) => ({ state: String(state), attributes });
