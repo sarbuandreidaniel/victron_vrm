@@ -19,6 +19,8 @@ API_BASE = "https://vrmapi.victronenergy.com/v2"
 # The EV flows are a part of Pc / Bc / Gc (the charger is a consumer on the
 # AC output), not extra energy on top of them.
 CODES = ("Pc", "Pb", "Pg", "Bc", "Bg", "Gc", "Gb", "Pe", "Be", "Ge")
+# The EV charger flows, in the order the `ev` websocket command returns them.
+EV_CODES = ("Pe", "Be", "Ge")
 
 UPDATE_INTERVAL = timedelta(minutes=15)
 # A month is re-fetched once this long after it ends, then never again.

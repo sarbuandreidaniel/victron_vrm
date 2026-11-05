@@ -36,7 +36,7 @@ Integrarea își adaugă singură cardul ca resursă Lovelace, cu codul inclus d
 
 ```yaml
 type: custom:victron-vrm-card
-view: zi          # zi | saptamana | luna | an
+view: zi          # zi | saptamana | luna | an | masina | amortizare | setari
 ```
 
 Fiecare grafic are în colț două butoane: **⇔** îl întinde pe ambele coloane (alegerea se ține minte în browser; pe mobil totul e deja pe o coloană) și **⛶** îl deschide pe tot ecranul (închidere cu ✕ sau Esc).
@@ -46,6 +46,18 @@ Câte un card pe view, cu căile `zi`, `saptamana`, `luna`, `an`. Apăsarea pe o
 ```yaml
 paths: { zi: azi, saptamana: sapt, luna: luna, an: an }
 ```
+
+### Mașina (stația de încărcare)
+
+```yaml
+type: custom:victron-vrm-card
+view: masina
+charger: evcs_hq2620yv6qn        # începutul entităților stației Victron EVCS (integrarea Victron GX)
+car: electric_vehicle_id_40      # opțional: mașina raportată de stație (nivel baterie, țintă)
+```
+
+- **Stația acum**: starea, puterea și curentul, nivelul bateriei mașinii față de țintă, ultima sesiune. Din card se poate porni sau opri încărcarea, schimba modul (Manual / Automat / Programat), curentul de încărcare (6–32 A) și pornirea automată la conectare. Entitățile se iau din prefix (`sensor.<charger>_status`, `switch.<charger>_ev_charging`, `select.<charger>_mode`, `number.<charger>_charge_current_setpoint` …); oricare se poate schimba cu `entities: { status: sensor.… }`.
+- **Istoricul, lună cu lună** (‹ ›): energia primită de mașină după sursă (solar / baterie / rețea), pe zile și pe orele zilei, sesiunile de încărcare (reconstituite din datele orare VRM) și toate lunile cu încărcări. Costul folosește prețul energiei din rețea din Setări pentru fiecare lună.
 
 ### Amortizare
 

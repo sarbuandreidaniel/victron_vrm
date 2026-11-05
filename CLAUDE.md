@@ -1,6 +1,6 @@
 # victron_vrm — notes for coding agents
 
-Home Assistant custom integration that downloads hourly energy flows of a Victron installation from the VRM API, keeps them in a local cache and ships one Lovelace card, `custom:victron-vrm-card`, with the views Zi / Săptămână / Lună / An / Amortizare / Setări. The card reads only the cache over websocket. Installed in production through HACS from this repository's GitHub releases.
+Home Assistant custom integration that downloads hourly energy flows of a Victron installation from the VRM API, keeps them in a local cache and ships one Lovelace card, `custom:victron-vrm-card`, with the views Zi / Săptămână / Lună / An / Mașina / Amortizare / Setări. The card reads only the cache over websocket. Installed in production through HACS from this repository's GitHub releases.
 
 The UI is Romanian. Keep every user-facing string in Romanian with diacritics; Python comments and docstrings are English, card comments Romanian.
 
@@ -60,6 +60,7 @@ All commands take an optional `entry_id`.
 | `victron_vrm/years` | `codes, years: {YYYY: {t, m: {MM: totals}, n: {MM: days with data}}}` |
 | `victron_vrm/days` (`start`, `end`) | `codes, days: {YYYY-MM-DD: totals}` |
 | `victron_vrm/hours` (`date`) | `codes, hours: {HH: values}` |
+| `victron_vrm/ev` (`start`, `end`) | `codes: [Pe, Be, Ge], hours: {YYYY-MM-DD: {HH: [Pe, Be, Ge]}}`, only hours with EV energy; the Mașina view asks for the whole history once |
 | `victron_vrm/finance` (admin) | saves the finance options, answers `{finance}` |
 
 `finance` lives in the config entry options: `investment` (lei), `prices: [{from: "YYYY-MM" | null, import, export}]` (lei/kWh), plus `price_import` / `price_export` mirroring the last price. The handler sorts by `from`, forces the first `from` to null and rejects two prices starting in the same month. Entries saved before price history have only the two plain fields; the card's `priceList()` turns them into one period.
@@ -95,6 +96,10 @@ python3 -m http.server 8765 -d integrations/victron_vrm   # from the parent repo
 # open http://localhost:8765/scripts/harness/?view=amortizare   (zi | saptamana | luna | an | amortizare | setari)
 ```
 In the Claude desktop app, point `.claude/launch.json` at that command and use `preview_start`. The card is `window.el`, the fake hass `window.hassFake` (`hassFake.fin` is the saved finance, `hassFake.calls` every write). `_go()` navigates the HA URL, so to switch views reload with another `?view=`. The browser caches the card file: after editing it, run `await fetch('../../custom_components/victron_vrm/frontend/victron-vrm-card.js', {cache: 'reload'})` in the page and reload, or the old card keeps running. If you change the websocket API, change the harness the same way.
+
+## Mașina view (EV charger)
+
+`view: masina` with `charger: <prefix>` (Victron EVCS entities from the core `victron_gx` integration: `sensor.<prefix>_status`, `_power`, `_current`, `_total_energy`, `_last_session_energy`, `_last_session_time`, `select.<prefix>_mode`, `switch.<prefix>_ev_charging`, `switch.<prefix>_auto_start`, `number.<prefix>_charge_current_setpoint`) and optionally `car: <prefix>` (`sensor.<prefix>_state_of_charge`, `_target_state_of_charge`, `_charging_state`); `entities:` overrides any single id. The live box re-renders only when one of those states changes (`_syncLive`), and the current stepper sends one `number.set_value` 800 ms after the last press. History comes from `victron_vrm/ev`; sessions are runs of consecutive hours with ≥ 0.05 kWh to the car, so their times are whole hours. Cost = grid kWh × that month's import price; savings = (solar + battery) kWh × the same price, matching Amortizare.
 
 ## Design rules already settled
 

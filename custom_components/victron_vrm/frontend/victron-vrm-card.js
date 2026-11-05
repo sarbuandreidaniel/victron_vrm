@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.10.2';
+const VERSION = '0.11.0';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -114,6 +114,24 @@ function parseNum(v) {
 // 89.229,83 / 1,11 / 0,4512: cel puțin două zecimale, fără să piardă din cele introduse
 const numS = (n) => (n == null ? '' : new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(n));
 const priceAt = (list, k) => { let p = list[0]; for (const q of list) if (!q.from || q.from <= k) p = q; return p; };
+// stația de încărcare (Victron EVCS) și mașina: stările din HA, în română
+const EVCS_ST = { disconnected: 'Mașina nu e conectată', connected: 'Conectată, nu încarcă', charging: 'Încarcă', charged: 'Încărcare terminată',
+  waiting_for_sun: 'Așteaptă surplus solar', waiting_for_rfid: 'Așteaptă cardul RFID', waiting_for_start: 'Așteaptă pornirea',
+  low_soc: 'Bateria casei e prea descărcată', ground_test_error: 'Eroare la testul de împământare', welded_contacts_test_error: 'Eroare: contacte sudate',
+  cp_input_test_error: 'Eroare la semnalul CP', residual_current_detected: 'Curent rezidual detectat', undervoltage_detected: 'Tensiune prea mică',
+  overvoltage_detected: 'Tensiune prea mare', overheating_detected: 'Supraîncălzire', charging_limit: 'Limita de încărcare atinsă',
+  start_charging: 'Pornește încărcarea', switching_to_3_phase: 'Trece pe trei faze', switching_to_1_phase: 'Trece pe o fază' };
+const CAR_ST = { not_charging: 'nu se încarcă', low_power_mode: 'consum redus', charging: 'se încarcă', sustain: 'menține nivelul', wake_up: 'se trezește',
+  blocked: 'încărcare blocată', unavailable: 'indisponibilă', discharging: 'se descarcă', scheduled_charging: 'încărcare programată' };
+const EV_MODES = [['manual', 'Manual'], ['auto', 'Automat'], ['scheduled_charge', 'Programat']];
+const EV_MODE_NOTE = { manual: 'Mod manual: pornești și oprești tu, cu curentul ales', auto: 'Mod automat: încarcă din surplusul solar',
+  scheduled_charge: 'Mod programat: încarcă în intervalul setat în stație' };
+const EV_NAMES = { Pe: 'Din solar', Be: 'Din baterie', Ge: 'Din rețea' };
+const EV_CHARTS = [
+  { id: 'ed', ttl: 'Pe zile', note: 'Energia primită de mașină, după sursă', up: ['Pe', 'Be', 'Ge'], names: EV_NAMES, drill: 'zi' },
+  { id: 'eh', ttl: 'Pe ore din zi', note: 'Când s-a încărcat mașina în această lună, adunat pe ore', up: ['Pe', 'Be', 'Ge'], names: EV_NAMES, rows: 'hod', drill: null },
+];
+const dur = (m) => (!isFinite(m) ? '—' : m < 60 ? `${F0(m)} min` : `${Math.floor(m / 60)} h ${p2(Math.round(m % 60))} min`);
 const PAY_CHARTS = [
   { id: 'cm', ttl: 'Câștig pe luni', note: 'Energia consumată fără s-o cumperi, plus valoarea energiei injectate', up: ['eco', 'injv'], unit: 'lei', num: lei,
     names: { eco: 'Economii din autoconsum', injv: 'Valoarea injecției' } },
@@ -255,6 +273,22 @@ dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 .bar i{display:block;height:100%;background:${FLOW.Pc};border-radius:7px 0 0 7px}
 .bl{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;font-size:15px;color:${C.muted}}
 .bl b{color:${C.fg};font-weight:500;font-variant-numeric:tabular-nums}
+.live .kpi{min-width:0}
+.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid ${C.ctl};border-radius:999px;padding:4px 12px;font-size:14px;white-space:nowrap;flex-shrink:0}
+.pill i{width:8px;height:8px;border-radius:50%;background:${C.muted}}
+.pill.on{border-color:${FLOW.Pc}}.pill.on i{background:${FLOW.Pc}}
+.pill.bad{border-color:#e09a1a}.pill.bad i{background:#e09a1a}
+.socb{position:relative;height:10px;border-radius:5px;background:#333;margin-top:10px}
+.socb i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:${C.sel}}
+.socb b{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;background:${C.fg}}
+.ctl{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid ${C.grid}}
+.cg .l{color:${C.muted};font-size:13px;margin-bottom:6px}
+.cg .seg{margin-top:0}
+.step{display:flex;align-items:center;gap:8px}
+.step .tb{width:36px;height:36px;font:inherit;font-size:20px;color:${C.fg}}
+.step .tb:disabled{opacity:.35;cursor:default}
+.step span{min-width:52px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
+.ev-st{margin:8px 0 0}.ev-st:empty{display:none}
 .fld{display:grid;gap:6px;margin-top:12px}
 .fld label{font-size:14px;color:${C.muted}}
 .fld .in{display:flex;align-items:center;gap:8px}
@@ -300,8 +334,8 @@ class VictronVrmCard extends HTMLElement {
     }
   }
   setConfig(config) {
-    const view = VIEWS.includes(config.view) || config.view === 'setari' || config.view === 'amortizare' ? config.view : 'zi';
-    this._cfg = { ...config, view, paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an', amortizare: 'amortizare', setari: 'setari', ...(config.paths || {}) } };
+    const view = VIEWS.includes(config.view) || ['setari', 'amortizare', 'masina'].includes(config.view) ? config.view : 'zi';
+    this._cfg = { ...config, view, paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an', masina: 'masina', amortizare: 'amortizare', setari: 'setari', ...(config.paths || {}) } };
     this._cache = new Map();
     // la upgrade, setConfig vine după connectedCallback și după hass
     if (this._hass && this._d) this._load();
@@ -339,6 +373,7 @@ class VictronVrmCard extends HTMLElement {
     const first = !this._hass; this._hass = h;
     if (first && this._d) this._load();
     else if (this._settings()) this._syncAuto();
+    else if (this._cfg && this._cfg.view === 'masina') this._syncLive();
   }
   get hass() { return this._hass; }
   _settings() { return this._cfg && this._cfg.view === 'setari'; }
@@ -356,13 +391,13 @@ class VictronVrmCard extends HTMLElement {
     const d = this._d, v = this._cfg.view;
     if (v === 'zi') return { from: d, to: d };
     if (v === 'saptamana') { const m = monday(d); return { from: m, to: addDays(m, 6) }; }
-    if (v === 'luna') return { from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 0) };
+    if (v === 'luna' || v === 'masina') return { from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 0) };
     return { from: new Date(d.getFullYear(), 0, 1), to: new Date(d.getFullYear(), 11, 31) };
   }
   _shift(n) {
     const d = this._d, v = this._cfg.view;
     this._d = v === 'zi' ? addDays(d, n) : v === 'saptamana' ? addDays(d, 7 * n)
-      : v === 'luna' ? new Date(d.getFullYear(), d.getMonth() + n, 1) : new Date(d.getFullYear() + n, 0, 1);
+      : v === 'luna' || v === 'masina' ? new Date(d.getFullYear(), d.getMonth() + n, 1) : new Date(d.getFullYear() + n, 0, 1);
     this._sync(); this._load();
   }
   _sync() {
@@ -385,7 +420,7 @@ class VictronVrmCard extends HTMLElement {
       const y = from.getFullYear() === to.getFullYear() ? '' : ' ' + from.getFullYear();
       return `${from.getDate()} ${LUNI[from.getMonth()]}${y} – ${to.getDate()} ${LUNI[to.getMonth()]} ${to.getFullYear()}`;
     }
-    if (v === 'luna') return cap(`${LUNI_L[from.getMonth()]} ${from.getFullYear()}`);
+    if (v === 'luna' || v === 'masina') return cap(`${LUNI_L[from.getMonth()]} ${from.getFullYear()}`);
     return String(from.getFullYear());
   }
 
@@ -403,6 +438,20 @@ class VictronVrmCard extends HTMLElement {
       if (refresh) return;
       try { this._info = await this._ws({ type: 'victron_vrm/info' }, true); this._err = null; } catch (e) { this._err = e && e.message ? e.message : String(e); }
       return this._renderSettings();
+    }
+    if (this._cfg.view === 'masina') {
+      const seq = (this._seq = (this._seq || 0) + 1), { from, to } = this._range(), t = today();
+      if (refresh && !(from <= t && t <= to)) return;
+      try {
+        const info = await this._ws({ type: 'victron_vrm/info' }, true);
+        const ev = await this._ws({ type: 'victron_vrm/ev', start: info.start, end: iso(t) }, true);
+        if (seq !== this._seq) return;
+        this._info = info; this._ev = ev; this._err = null;
+      } catch (e) {
+        if (seq !== this._seq) return;
+        this._err = e && e.message ? e.message : String(e);
+      }
+      return this._renderEv();
     }
     if (this._cfg.view === 'amortizare') {
       const seq = (this._seq = (this._seq || 0) + 1);
@@ -566,12 +615,12 @@ ${this._yearsTable()}${this._foot()}`;
     }
   }
   _draw(el, c, W, H) {
-    const v = this._cfg.view, rows = this._rows;
+    const v = this._cfg.view, rows = c.rows ? this._extra[c.rows] : this._rows;
     const label = (r) => r.label;
     // barele cresc odată cu graficul (lățime dublă / ecran complet), până la 2,5×
-    const maxBar = Math.round({ zi: 18, saptamana: 40, luna: 16, an: 36, amortizare: 36 }[v] * Math.min(2.5, Math.max(1, W / 640)));
-    const drill = v === 'an' || v === 'amortizare' ? 'luna' : v === 'zi' ? null : 'zi';
-    const svg = barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' ? 30 : v === 'amortizare' ? 44 : 34, click: !!drill, fz: this._fz || 1 });
+    const maxBar = Math.round((c.rows === 'hod' ? 18 : { zi: 18, saptamana: 40, luna: 16, an: 36, amortizare: 36, masina: 16 }[v]) * Math.min(2.5, Math.max(1, W / 640)));
+    const drill = c.drill !== undefined ? c.drill : v === 'an' || v === 'amortizare' ? 'luna' : v === 'zi' ? null : 'zi';
+    const svg = barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, labelW: v === 'zi' || c.rows === 'hod' ? 30 : v === 'amortizare' ? 44 : 34, click: !!drill, fz: this._fz || 1 });
     el.innerHTML = svg + '<div class="tip" hidden></div>';
     const tip = el.querySelector('.tip'), hl = el.querySelector('.hl');
     el.querySelectorAll('.hit').forEach((hit) => {
@@ -589,6 +638,193 @@ ${this._yearsTable()}${this._foot()}`;
       hit.addEventListener('mouseleave', () => { tip.hidden = true; hl.setAttribute('opacity', '0'); });
       if (drill && r.any) hit.addEventListener('click', () => this._go(drill, r.d || parse(r.k)));
     });
+  }
+
+  // ── mașina: starea stației, comenzi și istoricul încărcărilor ───────
+  _evEnt() {
+    const c = this._cfg.charger, car = this._cfg.car, E = {};
+    if (c) Object.assign(E, { status: `sensor.${c}_status`, power: `sensor.${c}_power`, current: `sensor.${c}_current`, mode: `select.${c}_mode`,
+      charging: `switch.${c}_ev_charging`, setpoint: `number.${c}_charge_current_setpoint`, auto: `switch.${c}_auto_start`,
+      total: `sensor.${c}_total_energy`, lastE: `sensor.${c}_last_session_energy`, lastT: `sensor.${c}_last_session_time` });
+    if (car) Object.assign(E, { soc: `sensor.${car}_state_of_charge`, target: `sensor.${car}_target_state_of_charge`, cstate: `sensor.${car}_charging_state` });
+    return Object.assign(E, this._cfg.entities || {});
+  }
+  _liveKey() {
+    const E = this._evEnt(), st = this._hass && this._hass.states;
+    return Object.values(E).map((id) => { const x = st && st[id]; return x ? x.state : '-'; }).join('|');
+  }
+  _liveHtml() {
+    const E = this._evEnt(), st = this._hass.states, S = (k) => (E[k] && st[E[k]]) || null;
+    const num = (k) => { const x = S(k); const n = x ? parseFloat(x.state) : NaN; return isFinite(n) ? n : NaN; };
+    if (!E.status) return `<div class="box live"><div class="ttl">Stația de încărcare</div><div class="note" style="margin:0">Pentru starea live și comenzi, adaugă în configurația cardului <code>charger:</code> cu începutul entităților stației (de exemplu <code>evcs_hq2620yv6qn</code>) și, opțional, <code>car:</code> pentru mașină.</div></div>`;
+    const sx = S('status');
+    if (!sx) return `<div class="box live"><div class="ttl">Stația de încărcare</div><div class="note warn" style="margin:0">Entitatea ${esc(E.status)} nu există.</div></div>`;
+    const status = sx.state, bad = /error|detected/.test(status) || status === 'unavailable';
+    const on = status === 'charging' || status === 'start_charging';
+    const mode = S('mode') ? S('mode').state : null, sp = num('setpoint'), spx = S('setpoint');
+    const amin = spx && isFinite(+spx.attributes.min) ? +spx.attributes.min : 6, amax = spx && isFinite(+spx.attributes.max) ? +spx.attributes.max : 32;
+    const shownA = this._evA != null ? this._evA : sp;
+    const kw = num('power') / 1000, amps = num('current');
+    const soc = num('soc'), target = num('target'), cs = S('cstate');
+    const carName = S('soc') ? String(S('soc').attributes.friendly_name || 'Mașina').replace(/\s*state of charge$/i, '') : '';
+    const charging = S('charging') ? S('charging').state === 'on' : null, auto = S('auto') ? S('auto').state === 'on' : null;
+    const kpi = (l, val, u, sub, extra = '') => `<div class="kpi"><div class="l">${l}</div><div class="v">${val}<span class="u">${u}</span></div>${extra}${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
+    const carK = S('soc') ? kpi(esc(carName), isFinite(soc) ? F0(soc) : '—', '%',
+      `${isFinite(target) ? `țintă ${F0(target)}%` : ''}${cs ? `${isFinite(target) ? ' · ' : ''}${esc(CAR_ST[cs.state] || cs.state)}` : ''}`,
+      isFinite(soc) ? `<div class="socb" role="img" aria-label="Baterie ${F0(soc)}%${isFinite(target) ? `, țintă ${F0(target)}%` : ''}"><i style="width:${Math.max(0, Math.min(100, soc))}%"></i>${isFinite(target) ? `<b style="left:${Math.max(0, Math.min(100, target))}%"></b>` : ''}</div>` : '') : '';
+    const ctl = [
+      charging !== null ? `<div class="cg"><div class="l">Încărcare</div><button class="btn pri ev-go">${charging ? 'Oprește încărcarea' : 'Pornește încărcarea'}</button></div>` : '',
+      mode !== null ? `<div class="cg"><div class="l">Mod</div><div class="seg ev-mode" role="group" aria-label="Modul stației">${EV_MODES.map(([k, l]) => `<button data-m="${k}" aria-pressed="${k === mode}">${l}</button>`).join('')}</div></div>` : '',
+      spx ? `<div class="cg"><div class="l">Curent de încărcare</div><div class="step"><button class="tb ev-dn" aria-label="Scade curentul"${shownA <= amin ? ' disabled' : ''}>−</button><span class="ev-a" aria-live="polite">${isFinite(shownA) ? F0(shownA) : '—'} A</span><button class="tb ev-up" aria-label="Crește curentul"${shownA >= amax ? ' disabled' : ''}>+</button></div></div>` : '',
+      auto !== null ? `<div class="cg"><div class="l">Pornire la conectare</div><button class="sw ev-auto" role="switch" aria-checked="${auto}" aria-label="Pornire automată când conectezi mașina"></button></div>` : '',
+    ].join('');
+    return `<div class="box live">
+ <div class="hd"><div><div class="ttl">Stația de încărcare</div><div class="note" style="margin:0">${mode ? esc(EV_MODE_NOTE[mode] || mode) : 'acum'}</div></div>
+  <span class="pill${bad ? ' bad' : on ? ' on' : ''}"><i></i>${esc(EVCS_ST[status] || (status === 'unavailable' ? 'Indisponibilă' : status))}</span></div>
+ <div class="kpis" style="--k:3;margin-top:12px">${kpi('Putere acum', isFinite(kw) ? F1(kw) : '—', 'kW', `${isFinite(amps) ? `${F0(amps)} A` : ''}${isFinite(sp) ? `${isFinite(amps) ? ' · ' : ''}setat ${F0(sp)} A` : ''}`)}${carK}${kpi('Ultima sesiune', isFinite(num('lastE')) ? kwh(num('lastE')) : '—', 'kWh', `${isFinite(num('lastT')) ? dur(num('lastT')) : ''}${isFinite(num('total')) ? ` · ${kwh(num('total'))} kWh de la instalare` : ''}`)}</div>
+ ${ctl ? `<div class="ctl">${ctl}</div>` : ''}<div class="note ev-st" role="status"></div></div>`;
+  }
+  _wireLive(box) {
+    const E = this._evEnt(), st = box.querySelector('.ev-st');
+    const call = (btn, domain, service, data) => {
+      if (btn) btn.disabled = true;
+      st.textContent = ''; st.className = 'note ev-st';
+      return this._hass.callService(domain, service, data)
+        .catch((e) => { st.textContent = `Comanda nu a mers: ${e && e.message ? e.message : e}`; st.className = 'note ev-st warn'; })
+        .finally(() => { if (btn) btn.disabled = false; });
+    };
+    const go = box.querySelector('.ev-go');
+    if (go) go.addEventListener('click', () => {
+      const on = this._hass.states[E.charging] && this._hass.states[E.charging].state === 'on';
+      call(go, 'switch', on ? 'turn_off' : 'turn_on', { entity_id: E.charging });
+    });
+    box.querySelectorAll('.ev-mode button').forEach((b) => b.addEventListener('click', () => {
+      box.querySelectorAll('.ev-mode button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+      call(null, 'select', 'select_option', { entity_id: E.mode, option: b.dataset.m });
+    }));
+    const auto = box.querySelector('.ev-auto');
+    if (auto) auto.addEventListener('click', () => {
+      const on = auto.getAttribute('aria-checked') !== 'true';
+      auto.setAttribute('aria-checked', on);
+      call(auto, 'switch', on ? 'turn_on' : 'turn_off', { entity_id: E.auto });
+    });
+    // curentul se trimite după o scurtă pauză, ca apăsările repetate să ajungă ca o singură comandă
+    const spx = this._hass.states[E.setpoint];
+    const step = (d) => {
+      const amin = spx && isFinite(+spx.attributes.min) ? +spx.attributes.min : 6, amax = spx && isFinite(+spx.attributes.max) ? +spx.attributes.max : 32;
+      const base = this._evA != null ? this._evA : parseFloat(spx && spx.state);
+      if (!isFinite(base)) return;
+      this._evA = Math.max(amin, Math.min(amax, base + d));
+      box.querySelector('.ev-a').textContent = `${F0(this._evA)} A`;
+      box.querySelector('.ev-dn').disabled = this._evA <= amin; box.querySelector('.ev-up').disabled = this._evA >= amax;
+      clearTimeout(this._evT);
+      this._evT = setTimeout(() => {
+        const value = this._evA;
+        call(null, 'number', 'set_value', { entity_id: E.setpoint, value }).finally(() => { if (this._evA === value) { this._evA = null; this._syncLive(true); } });
+      }, 800);
+    };
+    const dn = box.querySelector('.ev-dn'), up = box.querySelector('.ev-up');
+    if (dn) dn.addEventListener('click', () => step(-1));
+    if (up) up.addEventListener('click', () => step(1));
+  }
+  // HA trimite `hass` la fiecare schimbare; redesenăm doar caseta live, și doar când s-a schimbat ceva de-al ei
+  _syncLive(force = false) {
+    const box = this.shadowRoot && this.shadowRoot.querySelector('.live');
+    if (!box || !this._hass) return;
+    const key = this._liveKey();
+    if (!force && (key === this._liveK || this._evA != null)) return;
+    this._liveK = key;
+    const t = document.createElement('div'); t.innerHTML = this._liveHtml();
+    const nb = t.firstElementChild; box.replaceWith(nb); this._wireLive(nb);
+  }
+  // sesiunile: ore consecutive în care mașina a primit energie
+  _sessions() {
+    if (this._sess && this._sess.src === this._ev) return this._sess.list;
+    const H = (this._ev && this._ev.hours) || {}, codes = (this._ev && this._ev.codes) || ['Pe', 'Be', 'Ge'], list = [];
+    let cur = null;
+    for (const ds of Object.keys(H).sort()) {
+      const d = parse(ds);
+      for (const hh of Object.keys(H[ds]).sort()) {
+        const vals = H[ds][hh], e = vals.reduce((a, x) => a + (x || 0), 0);
+        if (e < 0.05) continue;
+        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), +hh);
+        if (!cur || +start !== cur.next) { cur = { start, v: { Pe: 0, Be: 0, Ge: 0 }, kwh: 0 }; list.push(cur); }
+        codes.forEach((c, i) => { cur.v[c] = (cur.v[c] || 0) + (vals[i] || 0); });
+        cur.kwh += e;
+        cur.end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), +hh + 1); cur.next = +cur.end;
+      }
+    }
+    this._sess = { src: this._ev, list };
+    return list;
+  }
+  _renderEv() {
+    const w = this.shadowRoot && this.shadowRoot.querySelector('.w'); if (!w || !this._hass) return;
+    const t = today(), { from, to } = this._range();
+    const nav = `<div class="box"><div class="nav"><div class="t">${esc(this._title())}</div>
+      <div class="bt"><button class="prev" aria-label="Luna trecută">‹</button><button class="now">Acum</button>
+      <button class="next" aria-label="Luna următoare"${to >= t ? ' disabled' : ''}>›</button></div></div>${this._err ? '' : '<div class="take"></div>'}</div>`;
+    const live = this._liveHtml();
+    if (this._err || !this._ev) {
+      w.innerHTML = nav + live + (this._err ? `<div class="box msg">Nu am putut citi istoricul VRM: ${esc(this._err)}</div>` : '');
+      this._wire(w); this._wireLive(w.querySelector('.live')); this._liveK = this._liveKey();
+      return;
+    }
+    const H = this._ev.hours, codes = this._ev.codes, ym = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}`;
+    const list = priceList((this._info && this._info.finance) || {}), price = (k) => { const q = list.length ? priceAt(list, k) : null; return q && q.import > 0 ? q.import : NaN; };
+    const P = price(ym(from));
+    const add = (acc, vals) => vals.map((x, i) => x + (acc[i] || 0));
+    // pe zile și pe orele zilei, pentru luna afișată
+    const rows = [], hod = Array.from({ length: 24 }, () => codes.map(() => 0));
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      const day = H[iso(d)] || {};
+      let tot = codes.map(() => 0);
+      for (const [hh, vals] of Object.entries(day)) { tot = add(tot, vals); hod[+hh] = add(hod[+hh], vals); }
+      rows.push(Object.assign(mk(iso(d), tot, codes), { label: String(d.getDate()), tip: cap(`${ZILE[d.getDay()]}, ${d.getDate()} ${LUNI_L[d.getMonth()]}`), d, future: d > t }));
+    }
+    this._extra = { hod: hod.map((vals, h) => Object.assign(mk(p2(h), vals, codes), { label: p2(h), tip: `${p2(h)}:00 – ${p2((h + 1) % 24)}:00` })) };
+    const tot = sum(rows), ev = tot.ev, sol = tot.v.Pe, bat = tot.v.Be, grid = tot.v.Ge;
+    const sess = this._sessions(), ms = sess.filter((x) => x.start >= from && x.start <= addDays(to, 1) && ym(x.start) === ym(from)), n = ms.length;
+    const kpi = (l, val, u, s = '') => `<div class="box kpi"><div class="l">${l}</div><div class="v">${val}<span class="u">${u}</span></div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+    const per = `${LUNI_L[from.getMonth()]} ${from.getFullYear()}`;
+    const first = Object.keys(H).sort()[0];
+    const take = ev > 0
+      ? `În ${per}, mașina a primit <b>${kwh(ev)} kWh</b> în <b>${n} ${n === 1 ? 'sesiune' : 'sesiuni'}</b>: <b>${pct(sol / ev)}</b> din solar, <b>${pct(bat / ev)}</b> din baterie și <b>${pct(grid / ev)}</b> din rețea.`
+        + (isFinite(P) ? ` Energia din rețea a costat <b>${lei(grid * P)} lei</b>; dacă toată încărcarea venea din rețea, ar fi costat <b>${lei(ev * P)} lei</b>.` : '')
+      : first && iso(to) < first ? `Istoricul stației de încărcare începe pe ${esc(first)}.` : `În ${per} mașina nu s-a încărcat acasă.`;
+
+    const src = (r) => `<td>${kwh(r.Pe)}</td><td>${kwh(r.Be)}</td><td>${kwh(r.Ge)}</td>`;
+    const srcH = `${th('Solar', 'Sol.')}${th('Baterie', 'Bat.')}${th('Rețea', 'Reț.')}`;
+    const hm = (d) => `${p2(d.getHours())}:00`;
+    const srows = ms.slice().reverse().map((x) => `<tr class="go" data-d="${iso(x.start)}"><td><span class="hn">${esc(cap(`${ZILE[x.start.getDay()]}, ${x.start.getDate()} ${LUNI_L[x.start.getMonth()]}`))}</span><span class="hm">${x.start.getDate()} ${LUNI[x.start.getMonth()]}</span></td>`
+      + `<td class="hn">${hm(x.start)}–${hm(x.end)}${iso(x.end) !== iso(x.start) && x.end.getHours() ? ' (a doua zi)' : ''}</td><td>${kwh(x.kwh)}</td>${src(x.v)}<td class="hn">${isFinite(price(ym(x.start))) ? lei(x.v.Ge * price(ym(x.start))) : '—'}</td></tr>`).join('');
+    // toate lunile cu încărcări
+    const mon = {};
+    for (const [ds, day] of Object.entries(H)) {
+      const k = ds.slice(0, 7), m = (mon[k] = mon[k] || { k, Pe: 0, Be: 0, Ge: 0, n: 0 });
+      for (const vals of Object.values(day)) codes.forEach((c, i) => { m[c] += vals[i] || 0; });
+    }
+    for (const x of sess) { const k = ym(x.start); if (mon[k]) mon[k].n++; }
+    const mrows = Object.values(mon).sort((a, b) => b.k.localeCompare(a.k)).map((m) => {
+      const e = m.Pe + m.Be + m.Ge, pk = price(m.k), [y, mm] = m.k.split('-');
+      return `<tr class="go${m.k === ym(from) ? ' sel' : ''}" data-m="${m.k}"><td><span class="hn">${cap(LUNI_L[+mm - 1])} ${y}</span><span class="hm">${cap(LUNI[+mm - 1])} ${y.slice(2)}</span></td><td>${kwh(e)}</td>${src(m)}<td class="hn">${m.n}</td><td>${isFinite(pk) ? lei(m.Ge * pk) : '—'}</td><td class="hn">${isFinite(pk) ? lei((m.Pe + m.Be) * pk) : '—'}</td></tr>`;
+    }).join('');
+
+    this._rows = rows; this._tot = tot; this._chartList = EV_CHARTS; this._wide = this._wide || loadWide();
+    w.innerHTML = nav + live + `
+<div class="kpis" style="--k:4">${kpi('Energie primită', kwh(ev), 'kWh', n ? `${n} ${n === 1 ? 'sesiune' : 'sesiuni'} · Ø ${kwh(ev / n)} kWh/sesiune` : 'nicio sesiune')}${kpi('Din solar și baterie', ev > 0 ? pct((sol + bat) / ev) : '—', '', `${kwh(sol)} kWh solar · ${kwh(bat)} kWh baterie`)}${kpi('Din rețea', kwh(grid), 'kWh', isFinite(P) ? `${lei(grid * P)} lei, la ${F2(P)} lei/kWh` : 'completează prețul în Setări')}${kpi('Economie', isFinite(P) ? lei((sol + bat) * P) : '—', 'lei', isFinite(P) ? `doar din rețea ar fi costat ${lei(ev * P)} lei` : '')}</div>
+<div class="charts">${EV_CHARTS.map((c) => this._box(c)).join('')}</div>
+<div class="box"><div class="ttl">Sesiuni de încărcare</div><div class="note">kWh · reconstituite din datele orare VRM, deci pe ore întregi · apasă pe o sesiune pentru ziua respectivă</div>
+ ${n ? `<div class="tw"><table><thead><tr><th>Ziua</th><th class="hn">Interval</th>${th('Total', 'Tot.')}${srcH}<th class="hn">Cost rețea</th></tr></thead><tbody>${srows}</tbody></table></div>` : `<div class="note" style="margin:0">Nicio sesiune în ${per}.</div>`}</div>
+${mrows ? `<h2>Pe luni<small>apasă pe o lună</small></h2><div class="box"><div class="tw"><table><thead><tr><th>Luna</th>${th('Total', 'Tot.')}${srcH}<th class="hn">Sesiuni</th>${th('Cost rețea', 'Cost')}<th class="hn">Economie</th></tr></thead><tbody class="evm">${mrows}</tbody></table></div><div class="note" style="margin:8px 0 0">kWh, iar costul și economia în lei</div></div>` : ''}
+<div class="foot">Costul folosește prețul energiei din rețea din Setări pentru fiecare lună; energia din solar și baterie e socotită la același preț, ca în Amortizare · ${esc(this._info.site)}</div>`;
+    w.querySelector('.take').innerHTML = take;
+    this._wire(w);
+    this._wireLive(w.querySelector('.live')); this._liveK = this._liveKey();
+    w.querySelectorAll('tr.go[data-d]').forEach((tr) => tr.addEventListener('click', () => this._go('zi', parse(tr.dataset.d))));
+    w.querySelectorAll('tbody.evm tr').forEach((tr) => tr.addEventListener('click', () => { const [y, m] = tr.dataset.m.split('-'); this._d = new Date(+y, +m - 1, 1); this._sync(); this._load(); }));
+    w.querySelectorAll('.wb').forEach((b) => b.addEventListener('click', () => this._toggleWide(b)));
+    w.querySelectorAll('.fb').forEach((b) => b.addEventListener('click', () => this._openFs(EV_CHARTS.find((c) => c.id === b.dataset.c))));
+    this._cws = {}; this._charts();
   }
 
   // ── amortizare: investiția recuperată din câștigul lunar ────────────

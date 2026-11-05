@@ -11,10 +11,12 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CODES, DOMAIN, FINANCE_KEYS, OPT_FINANCE
+from .const import CODES, DOMAIN, EV_CODES, FINANCE_KEYS, OPT_FINANCE
 from .history import VrmHistory
 
 MAX_DAYS = 400
+# EV hours are sparse, so the whole history fits in one answer.
+MAX_EV_DAYS = 3700
 
 
 def _entry(hass: HomeAssistant, msg: dict[str, Any]) -> ConfigEntry | None:
@@ -45,6 +47,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_years)
     websocket_api.async_register_command(hass, ws_days)
     websocket_api.async_register_command(hass, ws_hours)
+    websocket_api.async_register_command(hass, ws_ev)
     websocket_api.async_register_command(hass, ws_finance)
 
 
@@ -116,6 +119,26 @@ def ws_hours(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
     if (h := _history(hass, msg)) is None:
         return _not_loaded(connection, msg)
     connection.send_result(msg["id"], {"codes": CODES, "hours": h.hours(msg["date"])})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/ev",
+        vol.Required("start"): _parse,
+        vol.Required("end"): _parse,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def ws_ev(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Hours with energy to the EV charger between two dates (inclusive), for the charger view."""
+    if (h := _history(hass, msg)) is None:
+        return _not_loaded(connection, msg)
+    start, end = msg["start"], msg["end"]
+    if end < start or (end - start).days > MAX_EV_DAYS:
+        connection.send_error(msg["id"], "invalid_range", f"Range must be 0–{MAX_EV_DAYS} days")
+        return
+    connection.send_result(msg["id"], {"codes": EV_CODES, "hours": h.ev_hours(start, end)})
 
 
 @websocket_api.websocket_command(

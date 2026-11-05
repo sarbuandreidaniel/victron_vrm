@@ -22,7 +22,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .api import VrmApi
-from .const import BACKFILL_PAUSE, CODES, DOMAIN, FINALIZE_DELAY, STORAGE_VERSION
+from .const import BACKFILL_PAUSE, CODES, DOMAIN, EV_CODES, FINALIZE_DELAY, STORAGE_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -262,6 +262,23 @@ class VrmHistory:
     def hours(self, day: date) -> dict[str, list[float]]:
         d = self._day(day)
         return dict(d["h"]) if d else {}
+
+    def ev_hours(self, start: date, end: date) -> dict[str, dict[str, list[float]]]:
+        """Hours with energy to the EV charger, as [Pe, Be, Ge], per day between two dates."""
+        idx = [CODES.index(c) for c in EV_CODES]
+        out: dict[str, dict[str, list[float]]] = {}
+        day = start
+        while day <= end:
+            if (d := self._day(day)) is not None:
+                hours = {
+                    hh: [v[i] for i in idx]
+                    for hh, v in sorted(d["h"].items())
+                    if any(v[i] > 0 for i in idx)
+                }
+                if hours:
+                    out[day.isoformat()] = hours
+            day += timedelta(days=1)
+        return out
 
     def period(self, period: str, day: date) -> tuple[list[float] | None, int]:
         """Totals and number of days with data for the day / month / year of `day`."""

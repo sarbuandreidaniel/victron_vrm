@@ -31,7 +31,8 @@ File: `custom_components/victron_vrm/frontend/victron-vrm-card.js`. Data model, 
 | `money(r, P, PI)`, `gainAt(r, P, PI)` | monthly bill/gain (see the money model in CLAUDE.md); `money` also stores `r.P`, `r.PI` |
 | `priceList(f)`, `priceAt(list, 'YYYY-MM')` | price history from `finance` |
 | `parseNum(v)`, `numS(n)` | parse Romanian / plain decimals; format with ≥ 2 decimals |
-| `CHARTS`, `PAY_CHARTS` | chart definitions (below) |
+| `CHARTS`, `PAY_CHARTS`, `EV_CHARTS` | chart definitions (below) |
+| `EVCS_ST`, `CAR_ST`, `EV_MODES`, `EV_MODE_NOTE`, `dur` | charger / car states in Romanian, charger modes, minutes as text |
 | `barChart(W, H, rows, o)` | SVG stacked bars, up and down, optional line |
 | `RAW_CSS` → `CSS` | styles; font sizes rewritten to scale with `--fz` |
 
@@ -55,6 +56,10 @@ File: `custom_components/victron_vrm/frontend/victron-vrm-card.js`. Data model, 
 
 Needs `info` (for `finance` and `start`) and `years`. Without an investment or a valid price list it shows a message with a button to Setări. Otherwise: summary paragraph, progress box, six KPIs (câștig mediu, timp rămas, amortizare estimată, randament anual, fără sistem, cu sistem), the `PAY_CHARTS` chart (gain per month, unit lei), a month table (newest first, rows drill to the month, tooltip with the prices used) and a year table. `this._chartList = PAY_CHARTS` makes `_charts()` draw the right list.
 
+## 4b. Mașina (`_renderEv`)
+
+Month navigation like Lună (`_range`/`_shift` treat `masina` as a month). Order on the page: nav + summary, the live box (`_liveHtml`, wired by `_wireLive`), four KPIs, `EV_CHARTS` (per day of the month; per hour of the day via `rows: 'hod'` from `this._extra.hod`), the month's sessions (`_sessions()`, memoised per websocket answer) and a table of every month with charging (click selects the month). Live entities come from `_evEnt()`; `set hass` calls `_syncLive()`, which swaps only the `.live` box when `_liveKey()` changes and never while the current stepper has an unsent value (`this._evA`). Service calls: `switch.turn_on/off` (charging, auto start), `select.select_option` (mode), `number.set_value` (current); errors show in `.ev-st`.
+
 ## 5. Setări (`_renderSettings`)
 
 Two columns (`.set > .col`): left = Mărime text + Notificări, right = Investiție și prețuri (`_finBox`) + Sincronizare VRM. Pieces:
@@ -71,7 +76,8 @@ A chart definition:
   up: ['Gc', 'Gb'], down: ['Pg', 'Bg'], line: 'prod',   // stacks above / below zero, optional line field
   names: { Gc: 'Import pentru consum', ... },          // legend + tooltip labels
   unit: 'lei', num: lei,                               // optional, default kWh / kwh()
-  ev: true }                                           // only when the period has EV energy
+  ev: true,                                            // only when the period has EV energy
+  rows: 'hod', drill: null }                           // optional: another row set (this._extra[rows]) and click target
 ```
 `_box(c)` renders title, note, ⇔ / ⛶ buttons, legend with totals (`_legend`) and the `.ch` container; `_charts()` redraws only containers whose width changed; `_draw()` calls `barChart` with per-view bar widths and wires hover tooltips and click-to-drill. Fullscreen (`_openFs/_closeFs`) clones the chart into an overlay on `document.body` with its own shadow root and the same CSS; Esc or ✕ closes it.
 

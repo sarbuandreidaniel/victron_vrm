@@ -77,6 +77,21 @@ def test_widen_old_cache():
     assert h.data["done"] == [] and h.data["codes"] == list(CODES)
 
 
+def test_ev_hours():
+    from victron_vrm.history import VrmHistory
+
+    h = VrmHistory.__new__(VrmHistory)
+    ev = [0.0] * len(CODES)
+    ev[CODES.index("Pe")], ev[CODES.index("Ge")] = 1.5, 2.0
+    house = [1.0] + [0.0] * (len(CODES) - 1)
+    h.data = {"years": {"2026": {"t": ev, "m": {"10": {"t": ev, "d": {
+        "12": {"t": ev, "h": {"19": ev, "20": house}},
+        "13": {"t": house, "h": {"08": house}},
+    }}}}}}
+    assert h.ev_hours(date(2026, 10, 1), date(2026, 10, 31)) == {"2026-10-12": {"19": [1.5, 0.0, 2.0]}}
+    assert h.ev_hours(date(2026, 11, 1), date(2026, 11, 30)) == {}
+
+
 def test_month_keys():
     assert list(month_keys(date(2025, 11, 20), date(2026, 2, 1))) == [(2025, 11), (2025, 12), (2026, 1), (2026, 2)]
 
