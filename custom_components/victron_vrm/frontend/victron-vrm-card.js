@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.11.0';
+const VERSION = '0.11.1';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -25,7 +25,7 @@ const ICON = { wide: 'M9,11H15V8L19,12L15,16V13H9V16L5,12L9,8V11M2,20V4H4V20H2M2
   full: 'M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z',
   close: 'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z' };
 // pe telefon antetele tabelelor sunt prescurtate, ca toate coloanele să încapă pe lățime
-const th = (full, short) => `<th><span class="hn">${full}</span><span class="hm">${short}</span></th>`;
+const th = (full, short, unit = '', cls = '') => `<th${cls ? ` class="${cls}"` : ''}><span class="hn">${full}</span><span class="hm">${short}</span>${unit ? `<small>${unit}</small>` : ''}</th>`;
 const HEAD = (ev) => `${th('Producție', 'Prod.')}<th>Casă</th>${ev ? th('Mașină', 'Maș.') : ''}${th('Import', 'Imp.')}${th('Injecție', 'Inj.')}<th class="hn">Încărcare</th><th class="hn">Descărcare</th>${th('Independență', 'Indep.')}<th class="hn">Autoconsum</th>`;
 const svgI = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 // graficele lățite se țin minte în browser (preferință per vizitator)
@@ -226,7 +226,8 @@ h2 small{font-weight:400;color:${C.muted};font-size:14px;margin-left:8px}
 .tip i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums;color:${C.fg}}
-th{color:${C.muted};font-weight:500;font-size:13px;text-align:right;padding:6px 8px;border-bottom:1px solid ${C.border}}
+th{color:${C.muted};font-weight:500;font-size:13px;text-align:right;padding:6px 8px;border-bottom:1px solid ${C.border};vertical-align:bottom}
+th small{display:block;font-weight:400;font-size:12px;margin-top:1px}
 td{text-align:right;padding:7px 8px;border-bottom:1px solid ${C.border}}
 th:first-child,td:first-child{text-align:left}
 tfoot td{font-weight:500;border-bottom:none;border-top:1px solid ${C.axis}}
@@ -793,7 +794,7 @@ ${this._yearsTable()}${this._foot()}`;
       : first && iso(to) < first ? `Istoricul stației de încărcare începe pe ${esc(first)}.` : `În ${per} mașina nu s-a încărcat acasă.`;
 
     const src = (r) => `<td>${kwh(r.Pe)}</td><td>${kwh(r.Be)}</td><td>${kwh(r.Ge)}</td>`;
-    const srcH = `${th('Solar', 'Sol.')}${th('Baterie', 'Bat.')}${th('Rețea', 'Reț.')}`;
+    const srcH = `${th('Solar', 'Sol.', 'kWh')}${th('Baterie', 'Bat.', 'kWh')}${th('Rețea', 'Reț.', 'kWh')}`;
     const hm = (d) => `${p2(d.getHours())}:00`;
     const srows = ms.slice().reverse().map((x) => `<tr class="go" data-d="${iso(x.start)}"><td><span class="hn">${esc(cap(`${ZILE[x.start.getDay()]}, ${x.start.getDate()} ${LUNI_L[x.start.getMonth()]}`))}</span><span class="hm">${x.start.getDate()} ${LUNI[x.start.getMonth()]}</span></td>`
       + `<td class="hn">${hm(x.start)}–${hm(x.end)}${iso(x.end) !== iso(x.start) && x.end.getHours() ? ' (a doua zi)' : ''}</td><td>${kwh(x.kwh)}</td>${src(x.v)}<td class="hn">${isFinite(price(ym(x.start))) ? lei(x.v.Ge * price(ym(x.start))) : '—'}</td></tr>`).join('');
@@ -813,9 +814,9 @@ ${this._yearsTable()}${this._foot()}`;
     w.innerHTML = nav + live + `
 <div class="kpis" style="--k:4">${kpi('Energie primită', kwh(ev), 'kWh', n ? `${n} ${n === 1 ? 'sesiune' : 'sesiuni'} · Ø ${kwh(ev / n)} kWh/sesiune` : 'nicio sesiune')}${kpi('Din solar și baterie', ev > 0 ? pct((sol + bat) / ev) : '—', '', `${kwh(sol)} kWh solar · ${kwh(bat)} kWh baterie`)}${kpi('Din rețea', kwh(grid), 'kWh', isFinite(P) ? `${lei(grid * P)} lei, la ${F2(P)} lei/kWh` : 'completează prețul în Setări')}${kpi('Economie', isFinite(P) ? lei((sol + bat) * P) : '—', 'lei', isFinite(P) ? `doar din rețea ar fi costat ${lei(ev * P)} lei` : '')}</div>
 <div class="charts">${EV_CHARTS.map((c) => this._box(c)).join('')}</div>
-<div class="box"><div class="ttl">Sesiuni de încărcare</div><div class="note">kWh · reconstituite din datele orare VRM, deci pe ore întregi · apasă pe o sesiune pentru ziua respectivă</div>
- ${n ? `<div class="tw"><table><thead><tr><th>Ziua</th><th class="hn">Interval</th>${th('Total', 'Tot.')}${srcH}<th class="hn">Cost rețea</th></tr></thead><tbody>${srows}</tbody></table></div>` : `<div class="note" style="margin:0">Nicio sesiune în ${per}.</div>`}</div>
-${mrows ? `<h2>Pe luni<small>apasă pe o lună</small></h2><div class="box"><div class="tw"><table><thead><tr><th>Luna</th>${th('Total', 'Tot.')}${srcH}<th class="hn">Sesiuni</th>${th('Cost rețea', 'Cost')}<th class="hn">Economie</th></tr></thead><tbody class="evm">${mrows}</tbody></table></div><div class="note" style="margin:8px 0 0">kWh, iar costul și economia în lei</div></div>` : ''}
+<div class="box"><div class="ttl">Sesiuni de încărcare</div><div class="note">Reconstituite din datele orare VRM, deci pe ore întregi · apasă pe o sesiune pentru ziua respectivă</div>
+ ${n ? `<div class="tw"><table><thead><tr><th>Ziua</th><th class="hn">Interval</th>${th('Total', 'Tot.', 'kWh')}${srcH}${th('Cost rețea', '', 'lei', 'hn')}</tr></thead><tbody>${srows}</tbody></table></div>` : `<div class="note" style="margin:0">Nicio sesiune în ${per}.</div>`}</div>
+${mrows ? `<h2>Pe luni<small>apasă pe o lună</small></h2><div class="box"><div class="tw"><table><thead><tr><th>Luna</th>${th('Total', 'Tot.', 'kWh')}${srcH}<th class="hn">Sesiuni</th>${th('Cost rețea', 'Cost', 'lei')}${th('Economie', '', 'lei', 'hn')}</tr></thead><tbody class="evm">${mrows}</tbody></table></div></div>` : ''}
 <div class="foot">Costul folosește prețul energiei din rețea din Setări pentru fiecare lună; energia din solar și baterie e socotită la același preț, ca în Amortizare · ${esc(this._info.site)}</div>`;
     w.querySelector('.take').innerHTML = take;
     this._wire(w);
