@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.10.0';
+const VERSION = '0.10.1';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -111,7 +111,8 @@ function parseNum(v) {
   if (raw.includes(',')) raw = raw.replace(/\./g, '').replace(',', '.');
   return Number(raw);
 }
-const num2s = (n) => (n == null ? '' : String(n).replace('.', ','));
+// 89.229,83 / 1,11 / 0,4512: cel puțin două zecimale, fără să piardă din cele introduse
+const numS = (n) => (n == null ? '' : new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(n));
 const priceAt = (list, k) => { let p = list[0]; for (const q of list) if (!q.from || q.from <= k) p = q; return p; };
 const PAY_CHARTS = [
   { id: 'cm', ttl: 'Câștig pe luni', note: 'Energia consumată fără s-o cumperi, plus valoarea energiei injectate', up: ['eco', 'injv'], unit: 'lei', num: lei,
@@ -229,7 +230,8 @@ tr.nil td{color:${C.muted}}
 .hm{display:none}
 .msg{color:${C.muted};font-size:15px;padding:30px;text-align:center}
 .foot{color:${C.muted};font-size:13px;text-align:right}
-.set{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
+.set{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px;align-items:start}
+.set>.col{display:grid;gap:12px;align-content:start;min-width:0}
 .seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .seg button{background:transparent;color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;min-height:36px;padding:0 14px;font:inherit;font-size:15px;cursor:pointer}
 .seg button:hover{background:#2a2a2a}
@@ -260,12 +262,21 @@ dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 .fld input:focus-visible{outline:2px solid ${C.focus};outline-offset:1px}
 .fld input:disabled{opacity:.6}
 .fld span{font-size:14px;color:${C.muted};min-width:56px}
-.l2{font-size:15px;margin-top:16px}
-.pr{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) 32px;gap:8px;align-items:end}
-.pr .fld{margin-top:10px}
-.pr .tb{margin-bottom:3px}
-.fld input[type=month]{color-scheme:dark}
-@media (max-width:480px){.pr{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px}.pr>.fld:first-child{grid-column:1/-1}.pr+.pr{border-top:1px solid ${C.grid};margin-top:12px}}
+.l2{font-size:15px;font-weight:500;margin:0 0 4px}
+.sub{border-top:1px solid ${C.grid};margin-top:16px;padding-top:14px}
+.fld .inv{max-width:280px}
+.pr{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) 32px;gap:8px;align-items:center;max-width:520px;margin-top:8px}
+.pr.ph{margin-top:4px;font-size:14px;color:${C.muted}}
+.pr input{min-width:0;background:${C.page};color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;height:38px;padding:0 10px;font:inherit;font-size:16px;font-variant-numeric:tabular-nums;box-sizing:border-box;width:100%}
+.pr input:focus-visible{outline:2px solid ${C.focus};outline-offset:1px}
+.pr input:disabled{opacity:.6}
+.pr input[type=month]{color-scheme:dark;padding-right:4px}
+.p0{font-size:15px;color:${C.soft};padding-left:2px}
+.acts{justify-content:space-between;margin-top:16px}
+.btn.pri{background:#2f72d0;border-color:#2f72d0;color:#fff;font-weight:500;padding:0 20px}
+.btn.pri:hover:not(:disabled){background:#3a7fe0}
+.fst{margin:8px 0 0}.fst:empty{display:none}
+@media (max-width:480px){.pr{grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,1fr) 32px;gap:6px}.pr input{padding:0 6px}}
 .ok{color:#4cc04c}.warn{color:#e09a1a}
 button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
 @media (max-width:700px){.w{padding:8px}.hm{display:inline}.hn{display:none}.kpi .v{font-size:24px}.nav .t{font-size:20px}table{font-size:14px}th{font-size:12px}th,td{padding:7px 3px}}
@@ -676,11 +687,12 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
       <ul class="sch"><li>în fiecare zi la 8:00, rezumatul zilei de ieri</li><li>pe 1 ale lunii, și rezumatul lunii trecute</li><li>pe 1 ianuarie, și rezumatul anului trecut</li></ul>
       <div class="row"><span class="note" style="margin:0">Ultima trimitere: <span class="lt">${esc(stamp(a.last))}</span></span><button class="btn test">Trimite acum</button></div>`;
     w.innerHTML = `<div class="box"><div class="nav"><div class="t">Setări</div></div></div>
-<div class="set">
+<div class="set"><div class="col">
  <div class="box"><div class="ttl">Mărime text</div><div class="note">Se aplică tuturor paginilor Energie VRM, doar pe acest dispozitiv</div>
   <div class="seg">${FZ.map(([l, v]) => `<button data-fz="${v}" aria-pressed="${v === fz}">${l}</button>`).join('')}</div>
   <div class="kpi" style="margin-top:14px"><div class="l">Exemplu</div><div class="v">${kwh(18.4)}<span class="u">kWh</span></div><div class="s">Ø ${kwh(15.9)} kWh/zi</div></div></div>
  <div class="box"><div class="ttl">Notificări</div><div class="note" style="margin:0">Automatizarea ${a.st ? esc(a.st.attributes.friendly_name || a.id) : ''}</div>${notif}</div>
+ </div><div class="col">
  ${this._finBox()}
  <div class="box"><div class="ttl">Sincronizare VRM</div>${this._err ? `<div class="note warn" style="margin-top:10px">${esc(this._err)}</div>` : i ? `<dl class="kv">
   <dt>Instalație</dt><dd>${esc(i.site)}</dd>
@@ -688,7 +700,7 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
   <dt>Istoric din</dt><dd>${st ? `${st.getDate()} ${LUNI[st.getMonth()]} ${st.getFullYear()}` : esc(i.start)}</dd>
   <dt>Stare</dt><dd class="${i.backfilling ? 'warn' : 'ok'}">${i.backfilling ? 'se descarcă istoricul…' : 'complet'}</dd>
   <dt>Versiune card</dt><dd>${VERSION}</dd></dl>` : ''}</div>
-</div>`;
+</div></div>`;
     this._wireFin(w);
     w.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
       saveFz(+b.dataset.fz);
@@ -714,26 +726,24 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
   }
   _finBox() {
     const f = (this._info && this._info.finance) || {}, admin = !this._hass.user || this._hass.user.is_admin;
-    const v = f.investment != null ? String(f.investment).replace('.', ',') : '';
-    return `<div class="box"><div class="ttl">Investiție și prețuri</div><div class="note" style="margin:0">Folosite în pagina Amortizare, pentru toate dispozitivele</div>
-  <div class="fld"><label for="f-investment">Valoarea investiției</label><div class="in"><input id="f-investment" type="text" inputmode="decimal" autocomplete="off" value="${v}"${admin ? '' : ' disabled'}><span>lei</span></div></div>
-  <div class="l2">Prețul energiei, lei/kWh</div>
-  <div class="note" style="margin:0">Fiecare preț se aplică din luna aleasă până la următorul. Amortizarea folosește pentru fiecare lună prețul ei, iar estimarea viitorului, prețul actual.</div>
-  <div class="pl">${this._priceRows(priceList(f).map((q) => ({ from: q.from || '', import: num2s(q.import), export: num2s(q.export) })), admin)}</div>
-  ${admin ? '<button class="btn padd" style="margin-top:10px">Adaugă un preț nou</button>' : ''}
-  <div class="row">${admin ? '<span class="note fst" style="margin:0" role="status"></span><button class="btn fsave">Salvează</button>' : '<span class="note" style="margin:0">Doar un administrator poate schimba valorile.</span>'}</div></div>`;
+    return `<div class="box"><div class="ttl">Investiție și prețuri</div><div class="note">Folosite în pagina Amortizare, aceleași pe toate dispozitivele</div>
+  <div class="fld"><label for="f-investment">Valoarea investiției</label><div class="in inv"><input id="f-investment" type="text" inputmode="decimal" autocomplete="off" value="${numS(f.investment)}"${admin ? '' : ' disabled'}><span>lei</span></div></div>
+  <div class="sub"><div class="l2">Prețul energiei</div><div class="note">În lei/kWh. Fiecare preț se aplică din luna aleasă până la următorul; Amortizarea calculează fiecare lună cu prețul ei, iar estimarea viitorului cu prețul actual.</div>
+  <div class="pl">${this._priceRows(priceList(f).map((q) => ({ from: q.from || '', import: numS(q.import), export: numS(q.export) })), admin)}</div></div>
+  ${admin ? '<div class="row acts"><button class="btn padd">+ Adaugă un preț</button><button class="btn pri fsave">Salvează</button></div><div class="note fst" role="status"></div>'
+    : '<div class="note" style="margin:12px 0 0">Doar un administrator poate schimba valorile.</div>'}</div>`;
   }
   _priceRows(rows, admin = true) {
     if (!rows.length) rows = [{ from: '', import: '', export: '' }];
     const dis = admin ? '' : ' disabled';
-    const inp = (i, k, l, val) => `<div class="fld"><label for="p${i}-${k}">${l}</label><input id="p${i}-${k}" class="p-${k}" type="text" inputmode="decimal" autocomplete="off" value="${esc(val)}"${dis}></div>`;
-    return rows.map((r, i) => `<div class="pr">
-   <div class="fld"><label for="p${i}-from">Din luna</label>${i ? `<input id="p${i}-from" class="p-from" type="month" placeholder="aaaa-ll" value="${esc(r.from)}"${dis}>` : `<input id="p${i}-from" class="p-from" type="text" value="început" disabled>`}</div>
-   ${inp(i, 'import', 'Din rețea', r.import)}${inp(i, 'export', 'Injecție', r.export)}
+    const inp = (i, k, val) => `<input id="p${i}-${k}" class="p-${k}" type="text" inputmode="decimal" autocomplete="off" aria-label="${k === 'import' ? 'Din rețea' : 'Injecție'}" value="${esc(val)}"${dis}>`;
+    return `<div class="pr ph"><span>Din luna</span><span>Din rețea</span><span>Injecție</span><span></span></div>` + rows.map((r, i) => `<div class="pr">
+   ${i ? `<input id="p${i}-from" class="p-from" type="month" aria-label="Din luna" placeholder="aaaa-ll" value="${esc(r.from)}"${dis}>` : '<span class="p0">de la început</span>'}
+   ${inp(i, 'import', r.import)}${inp(i, 'export', r.export)}
    ${i && admin ? `<button class="tb pdel" data-i="${i}" title="Șterge" aria-label="Șterge prețul din ${esc(r.from)}">${svgI(ICON.close)}</button>` : '<span></span>'}</div>`).join('');
   }
   _readPrices(w) {
-    return [...w.querySelectorAll('.pr')].map((el, i) => ({
+    return [...w.querySelectorAll('.pr:not(.ph)')].map((el, i) => ({
       from: i ? el.querySelector('.p-from').value.trim() : '',
       import: el.querySelector('.p-import').value, export: el.querySelector('.p-export').value }));
   }
@@ -758,7 +768,7 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
     save.addEventListener('click', async () => {
       const inv = w.querySelector('#f-investment'), iv = parseNum(inv.value);
       if (iv !== null && !(iv >= 0)) return bad('Valoarea investiției trebuie să fie un număr pozitiv, de exemplu 81.246,17.', inv);
-      const prices = [], seen = new Set(), els = [...w.querySelectorAll('.pr')];
+      const prices = [], seen = new Set(), els = [...w.querySelectorAll('.pr:not(.ph)')];
       for (const [i, el] of els.entries()) {
         const fe = el.querySelector('.p-from'), from = i ? fe.value.trim() : null;
         if (i && !/^\d{4}-(0[1-9]|1[0-2])$/.test(from)) return bad('Alege luna de la care se aplică prețul (aaaa-ll, de exemplu 2026-07).', fe);
@@ -777,7 +787,8 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
       try {
         const res = await this._hass.callWS(this._cfg.entry_id ? { ...msg, entry_id: this._cfg.entry_id } : msg);
         this._info = { ...this._info, finance: res.finance };
-        draw(priceList(res.finance).map((q) => ({ from: q.from || '', import: num2s(q.import), export: num2s(q.export) })));
+        draw(priceList(res.finance).map((q) => ({ from: q.from || '', import: numS(q.import), export: numS(q.export) })));
+        inv.value = numS(res.finance.investment);
         status.textContent = 'Salvat'; status.className = 'note fst ok';
         window.dispatchEvent(new Event(FIN_EVENT));
       } catch (e) {
