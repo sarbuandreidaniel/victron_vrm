@@ -123,6 +123,17 @@ def ws_hours(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
         vol.Required("type"): f"{DOMAIN}/finance",
         vol.Optional("entry_id"): str,
         **{vol.Required(k): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))) for k in FINANCE_KEYS},
+        # price periods: each applies from month `from` (the first, with `from` null, from the start)
+        vol.Optional("prices"): vol.All(
+            [
+                {
+                    vol.Required("from"): vol.Any(None, vol.Match(r"^\d{4}-(0[1-9]|1[0-2])$")),
+                    vol.Required("import"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                    vol.Required("export"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                }
+            ],
+            vol.Length(min=1),
+        ),
     }
 )
 @websocket_api.require_admin
@@ -131,6 +142,17 @@ def ws_finance(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
     """Save the investment and energy prices used by the payback view."""
     if (entry := _entry(hass, msg)) is None:
         return _not_loaded(connection, msg)
-    finance = {k: msg[k] for k in FINANCE_KEYS if msg[k] is not None}
+    finance: dict[str, Any] = {k: msg[k] for k in FINANCE_KEYS if msg[k] is not None}
+    if prices := msg.get("prices"):
+        prices = sorted(prices, key=lambda p: p["from"] or "")
+        froms = [p["from"] or "" for p in prices]
+        if len(set(froms)) != len(froms):
+            connection.send_error(msg["id"], "invalid_format", "Două prețuri încep în aceeași lună")
+            return
+        prices[0] = {**prices[0], "from": None}
+        finance["prices"] = prices
+        # the current price, for readers of the two plain fields
+        finance["price_import"] = prices[-1]["import"]
+        finance["price_export"] = prices[-1]["export"]
     hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_FINANCE: finance})
     connection.send_result(msg["id"], {"finance": finance})
