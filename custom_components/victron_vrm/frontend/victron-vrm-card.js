@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.10.1';
+const VERSION = '0.10.2';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -664,7 +664,7 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
 <div class="box"><div class="ttl">Pe luni</div><div class="note">lei · apasă pe o lună pentru detalii</div>
  <div class="tw"><table><thead><tr><th>Luna</th>${th2}<th class="hn">Recuperat</th></tr></thead><tbody>${mrows}</tbody></table></div></div>
 <h2>Pe ani</h2><div class="box"><div class="tw"><table><thead><tr><th>An</th>${th2}</tr></thead><tbody>${years}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
-<div class="foot">Prețuri din Setări: ${F2(P)} lei/kWh din rețea, ${F2(PI)} lei/kWh injectat, aceleași pentru toată perioada · importul și injecția se compensează lunar · istoric VRM din ${since}</div>`;
+<div class="foot">${list.length > 1 ? `Prețuri din Setări: fiecare lună cu prețul ei, acum ${F2(P)} lei/kWh din rețea și ${F2(PI)} lei/kWh injectat` : `Preț din Setări: ${F2(P)} lei/kWh din rețea, ${F2(PI)} lei/kWh injectat, pentru toată perioada`} · importul și injecția se compensează lunar · istoric VRM din ${since}</div>`;
     w.querySelectorAll('tbody tr.go').forEach((tr) => tr.addEventListener('click', () => this._go('luna', parse(tr.dataset.k + '-01'))));
     w.querySelectorAll('.wb').forEach((b) => b.addEventListener('click', () => this._toggleWide(b)));
     w.querySelectorAll('.fb').forEach((b) => b.addEventListener('click', () => this._openFs(PAY_CHARTS.find((c) => c.id === b.dataset.c))));
