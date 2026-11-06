@@ -48,6 +48,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_days)
     websocket_api.async_register_command(hass, ws_hours)
     websocket_api.async_register_command(hass, ws_ev)
+    websocket_api.async_register_command(hass, ws_flows)
     websocket_api.async_register_command(hass, ws_finance)
 
 
@@ -139,6 +140,28 @@ def ws_ev(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: 
         connection.send_error(msg["id"], "invalid_range", f"Range must be 0–{MAX_EV_DAYS} days")
         return
     connection.send_result(msg["id"], {"codes": EV_CODES, "hours": h.ev_hours(start, end)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/flows",
+        vol.Required("start"): _parse,
+        vol.Required("end"): _parse,
+        vol.Required("codes"): vol.All([vol.In(CODES)], vol.Length(min=1), vol.Unique()),
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def ws_flows(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Hours where any of the requested flows is non-zero, between two dates (inclusive)."""
+    if (h := _history(hass, msg)) is None:
+        return _not_loaded(connection, msg)
+    start, end = msg["start"], msg["end"]
+    if end < start or (end - start).days > MAX_DAYS:
+        connection.send_error(msg["id"], "invalid_range", f"Range must be 0–{MAX_DAYS} days")
+        return
+    codes = msg["codes"]
+    connection.send_result(msg["id"], {"codes": codes, "hours": h.flow_hours(start, end, codes)})
 
 
 @websocket_api.websocket_command(

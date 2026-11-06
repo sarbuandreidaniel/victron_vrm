@@ -1,6 +1,6 @@
 # victron_vrm — notes for coding agents
 
-Home Assistant custom integration that downloads hourly energy flows of a Victron installation from the VRM API, keeps them in a local cache and ships one Lovelace card, `custom:victron-vrm-card`, with the views Zi / Săptămână / Lună / An / Mașina / Amortizare / Setări. The card reads only the cache over websocket. Installed in production through HACS from this repository's GitHub releases.
+Home Assistant custom integration that downloads hourly energy flows of a Victron installation from the VRM API, keeps them in a local cache and ships one Lovelace card, `custom:victron-vrm-card`, with the views Zi / Săptămână / Lună / An / Mașina / Baterie / Amortizare / Setări. The card reads only the cache over websocket. Installed in production through HACS from this repository's GitHub releases.
 
 The UI is Romanian. Keep every user-facing string in Romanian with diacritics; Python comments and docstrings are English, card comments Romanian.
 
@@ -61,6 +61,7 @@ All commands take an optional `entry_id`.
 | `victron_vrm/days` (`start`, `end`) | `codes, days: {YYYY-MM-DD: totals}` |
 | `victron_vrm/hours` (`date`) | `codes, hours: {HH: values}` |
 | `victron_vrm/ev` (`start`, `end`) | `codes: [Pe, Be, Ge], hours: {YYYY-MM-DD: {HH: [Pe, Be, Ge]}}`, only hours with EV energy; the Mașina view asks for the whole history once |
+| `victron_vrm/flows` (`start`, `end`, `codes`) | `codes, hours: {YYYY-MM-DD: {HH: values in the order of codes}}`, only hours where one of `codes` is non-zero, at most 400 days; the Baterie view asks for the shown month with `[Pb, Gb, Bc, Bg]` |
 | `victron_vrm/finance` (admin) | saves the finance options, answers `{finance}` |
 
 `finance` lives in the config entry options: `investment` (lei), `prices: [{from: "YYYY-MM" | null, import, export}]` (lei/kWh), plus `price_import` / `price_export` mirroring the last price. The handler sorts by `from`, forces the first `from` to null and rejects two prices starting in the same month. Entries saved before price history have only the two plain fields; the card's `priceList()` turns them into one period.
@@ -93,13 +94,17 @@ Worked example (P 1.11, PI 0.45): import 376 kWh, injection 43 kWh, consumption 
 
 ```bash
 python3 -m http.server 8765 -d integrations/victron_vrm   # from the parent repo
-# open http://localhost:8765/scripts/harness/?view=amortizare   (zi | saptamana | luna | an | amortizare | setari)
+# open http://localhost:8765/scripts/harness/?view=amortizare   (zi | saptamana | luna | an | masina | baterie | amortizare | setari)
 ```
 In the Claude desktop app, point `.claude/launch.json` at that command and use `preview_start`. The card is `window.el`, the fake hass `window.hassFake` (`hassFake.fin` is the saved finance, `hassFake.calls` every write). `_go()` navigates the HA URL, so to switch views reload with another `?view=`. The browser caches the card file: after editing it, run `await fetch('../../custom_components/victron_vrm/frontend/victron-vrm-card.js', {cache: 'reload'})` in the page and reload, or the old card keeps running. If you change the websocket API, change the harness the same way.
 
 ## Mașina view (EV charger)
 
 `view: masina` with `charger: <prefix>` (Victron EVCS entities from the core `victron_gx` integration: `sensor.<prefix>_status`, `_power`, `_current`, `_total_energy`, `_last_session_energy`, `_last_session_time`, `select.<prefix>_mode`, `switch.<prefix>_ev_charging`, `switch.<prefix>_auto_start`, `number.<prefix>_charge_current_setpoint`) and optionally `car: <prefix>` (`sensor.<prefix>_state_of_charge`, `_target_state_of_charge`, `_charging_state`); `entities:` overrides any single id. The live box re-renders only when one of those states changes (`_syncLive`), and the current stepper sends one `number.set_value` 800 ms after the last press. History comes from `victron_vrm/ev`; sessions are runs of consecutive hours with ≥ 0.05 kWh to the car, so their times are whole hours. Cost = grid kWh × that month's import price; savings = (solar + battery) kWh × the same price, matching Amortizare.
+
+## Baterie view (home battery)
+
+`view: baterie`, optional `capacity:` (kWh, for full cycles and stored energy) and `battery:` overriding any entity of `BAT_DEF`: `soc`, `reserve` (active SoC limit), `mode` (ESS mode select), `minsoc`, `force` (force charge switch), `maxI`, `maxC`, `maxInv`, `maxFeed` (ESS limits, -1 = none), plus entities with no default: `power`, `voltage`, `current`, `temp`, `left`, `full` (the last two are text sensors; a value that does not start with a digit is a message, not a duration). The live box holds the controls: a mode change, force charge and the limits go through an inline confirmation (`.cf`), the min-SoC stepper sends one `number.set_value` 800 ms after the last press. `_syncBat()` skips re-rendering while a confirmation is open, the stepper has an unsent value or a limit field was edited. History: `victron_vrm/days` (daily rows), `victron_vrm/flows` (hour-of-day chart), `victron_vrm/years` (month and year tables) and the SoC from `recorder/statistics_during_period` (period `day`, min / max / mean; the chart is left out for months without statistics). Efficiency = discharge ÷ charge, losses = charge − discharge, cycles = discharge ÷ capacity.
 
 ## Design rules already settled
 

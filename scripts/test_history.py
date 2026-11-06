@@ -90,6 +90,11 @@ def test_ev_hours():
     }}}}}}
     assert h.ev_hours(date(2026, 10, 1), date(2026, 10, 31)) == {"2026-10-12": {"19": [1.5, 0.0, 2.0]}}
     assert h.ev_hours(date(2026, 11, 1), date(2026, 11, 30)) == {}
+    # any subset of flows, in the order asked for
+    assert h.flow_hours(date(2026, 10, 1), date(2026, 10, 31), ["Ge", "Pc"]) == {
+        "2026-10-12": {"19": [2.0, 0.0], "20": [0.0, 1.0]},
+        "2026-10-13": {"08": [0.0, 1.0]},
+    }
 
 
 def test_month_keys():

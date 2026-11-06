@@ -33,6 +33,8 @@ File: `custom_components/victron_vrm/frontend/victron-vrm-card.js`. Data model, 
 | `parseNum(v)`, `numS(n)` | parse Romanian / plain decimals; format with ≥ 2 decimals |
 | `CHARTS`, `PAY_CHARTS`, `EV_CHARTS` | chart definitions (below) |
 | `EVCS_ST`, `CAR_ST`, `EV_MODES`, `EV_MODE_NOTE`, `dur` | charger / car states in Romanian, charger modes, minutes as text |
+| `BAT_DEF`, `ESS_MODES`, `ESS_NOTE`, `BAT_LIMS`, `BAT_NAMES`, `BAT_CODES`, `BAT_CHARTS`, `isDur`, `MONTH_V` | Baterie view: default entities, ESS modes, limits, chart definitions; `MONTH_V` = views navigated by month |
+| `rangeChart(W, H, rows, o)` | SVG min–max bars with a mean tick (SoC per day, 0–100 %), same `.hit` / `.hl` hover zones as `barChart` |
 | `barChart(W, H, rows, o)` | SVG stacked bars, up and down, optional line |
 | `RAW_CSS` → `CSS` | styles; font sizes rewritten to scale with `--fz` |
 
@@ -59,6 +61,10 @@ Needs `info` (for `finance` and `start`) and `years`. Without an investment or a
 ## 4b. Mașina (`_renderEv`)
 
 Month navigation like Lună (`_range`/`_shift` treat `masina` as a month). Order on the page: nav + summary, the live box (`_liveHtml`, wired by `_wireLive`), four KPIs, `EV_CHARTS` (per day of the month; per hour of the day via `rows: 'hod'` from `this._extra.hod`), the month's sessions (`_sessions()`, memoised per websocket answer) a table of every month with charging and one per year with a total row (a click selects that month, or the year's last month). Live entities come from `_evEnt()`; `set hass` calls `_syncLive()`, which swaps only the `.live` box when `_liveKey()` changes and never while the current stepper has an unsent value (`this._evA`). Service calls: `switch.turn_on/off` (charging, auto start), `select.select_option` (mode), `number.set_value` (current); errors show in `.ev-st`.
+
+## 4c. Baterie (`_renderBat`)
+
+Month navigation like Mașina. Order: nav + summary, the live box (`_batLiveHtml`, wired by `_wireBat`, refreshed by `_syncBat`), four KPIs (charge, discharge, share of consumption from the battery, full cycles or efficiency), `BAT_CHARTS` (per day, per hour of day from `this._extra.hod`, SoC per day from `this._extra.soc` drawn by `rangeChart` when a chart has `kind: 'soc'`), a day table (newest first, click → Zi) and month / year tables from `victron_vrm/years`. `_socStats()` calls `recorder/statistics_during_period` directly (not through `_ws`, which adds `entry_id`) and caches by entity and range; failures give `null` and hide the SoC chart. Confirmations use the `.cf` bar inside the live box (`ask(text, fn)` in `_wireBat`); status messages go to the current `.live .bat-st`, since the box may be replaced while a command runs.
 
 ## 5. Setări (`_renderSettings`)
 

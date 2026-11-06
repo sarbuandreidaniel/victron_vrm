@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import date, datetime, time, timedelta, tzinfo
 import logging
 from typing import Any
@@ -265,7 +265,13 @@ class VrmHistory:
 
     def ev_hours(self, start: date, end: date) -> dict[str, dict[str, list[float]]]:
         """Hours with energy to the EV charger, as [Pe, Be, Ge], per day between two dates."""
-        idx = [CODES.index(c) for c in EV_CODES]
+        return self.flow_hours(start, end, EV_CODES)
+
+    def flow_hours(
+        self, start: date, end: date, codes: Iterable[str]
+    ) -> dict[str, dict[str, list[float]]]:
+        """Hours where any of `codes` is non-zero, as values in the order of `codes`, per day."""
+        idx = [CODES.index(c) for c in codes]
         out: dict[str, dict[str, list[float]]] = {}
         day = start
         while day <= end:

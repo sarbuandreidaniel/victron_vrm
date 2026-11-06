@@ -4,9 +4,10 @@
 
   Serve the repository root and open this page:
       python3 -m http.server 8765 -d integrations/victron_vrm
-      http://localhost:8765/scripts/harness/?view=amortizare      (zi | saptamana | luna | an | masina | amortizare | setari)
+      http://localhost:8765/scripts/harness/?view=amortizare      (zi | saptamana | luna | an | masina | baterie | amortizare | setari)
   Optional: &d=2026-07-14 (shown date), &admin=0 (non-admin user), &evfrom=2025-11-01 (first EV day), &ev=charging (charger status for the
-  Mașina view: disconnected | connected | charging | charged | waiting_for_sun | overheating_detected | unavailable).
+  Mașina view: disconnected | connected | charging | charged | waiting_for_sun | overheating_detected | unavailable),
+  &bat=chg | dis | idle (battery state for the Baterie view), &socfrom=2026-10-01 (first day of SoC statistics).
 
   The data is generated below by a small deterministic model (7 kW solar, 20 kWh battery, EV charger
   from 2026-10-12 on); it is not real installation data. The fake `hass.callWS` answers the same
@@ -32,14 +33,14 @@
   const CAP = 20, RESERVE = 4, PEAK = 7;
 
   // o zi = 24 de ore × CODES, cu starea bateriei purtată de la o zi la alta
-  const hours = {}, now = new Date();
+  const hours = {}, socDay = {}, now = new Date();
   let soc = 10;
   for (let d = new Date(START); d <= now; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
     const r = rng(+d / 864e5), doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
     const len = 12 + 3.6 * Math.sin(2 * Math.PI * (doy - 80) / 365), rise = 13 - len / 2;
     const sky = r() < 0.55 ? 0.85 + 0.15 * r() : 0.15 + 0.5 * r();
     const ev = d >= EV_FROM && r() < 0.4;
-    const day = {};
+    const day = {}, sd = [];
     for (let h = 0; h < 24; h++) {
       const x = (h + 0.5 - rise) / len;
       const pv = x > 0 && x < 1 ? PEAK * SUN[d.getMonth()] * sky * Math.sin(Math.PI * x) ** 1.5 * (0.9 + 0.2 * r()) : 0;
@@ -53,10 +54,12 @@
       v.Bc = Math.min(deficit, Math.max(0, soc - RESERVE) * 0.95); v.Gc = deficit - v.Bc;
       if (h < 5 && soc < RESERVE + 1 && sky < 0.5) v.Gb = 1.5;   // încărcare din rețea în nopțile cu bateria jos
       soc = Math.min(CAP, soc + (v.Pb + v.Gb) * 0.92 - v.Bc / 0.95 - 0.03);
+      sd.push(Math.max(0, soc) / CAP * 100);
       v.Pe = v.Pc * share; v.Be = v.Bc * share; v.Ge = v.Gc * share;
       if (CODES.some((c) => v[c] > 0)) day[p2(h)] = CODES.map((c) => Math.round(v[c] * 1000) / 1000);
     }
     hours[iso(d)] = day;
+    socDay[iso(d)] = { start: +d, end: +d + 864e5, min: Math.min(...sd), max: Math.max(...sd), mean: sd.reduce((a, x) => a + x, 0) / sd.length };
   }
   const add = (a, b) => a.map((x, i) => x + b[i]);
   const zero = () => CODES.map(() => 0);
@@ -69,6 +72,8 @@
 
   const view = q.get('view') || 'zi';
   const evs = q.get('ev') || 'charging', live = evs === 'charging';
+  const bat = q.get('bat') || 'dis', bp = bat === 'chg' ? 3120 : bat === 'dis' ? -685 : 4;
+  const socFrom = /^\d{4}-\d{2}-\d{2}$/.test(q.get('socfrom') || '') ? q.get('socfrom') : '2026-10-01';
   const S = (state, attributes = {}) => ({ state: String(state), attributes });
   // stația și mașina, cu aceleași entități ca integrarea victron_gx (prefix evcs_demo / ev_demo)
   const states = {
@@ -86,6 +91,22 @@
     'sensor.ev_demo_state_of_charge': S(64, { friendly_name: 'Mașina demo State of charge', unit_of_measurement: '%' }),
     'sensor.ev_demo_target_state_of_charge': S(90, { unit_of_measurement: '%' }),
     'sensor.ev_demo_charging_state': S(live ? 'charging' : 'not_charging'),
+    // bateria, cu entitățile implicite ale cardului (dispozitivul GX din victron_gx) plus câteva date în `battery:`
+    'sensor.gx_device_dc_battery_charge': S(68, { unit_of_measurement: '%' }),
+    'sensor.gx_device_active_soc_limit': S(50, { unit_of_measurement: '%' }),
+    'select.gx_device_ess_mode': S('optimized_no_battery_life', { options: ['optimized_battery_life', 'optimized_no_battery_life', 'keep_batteries_charged', 'external_control'] }),
+    'number.gx_device_ess_min_soc_limit': S(50, { min: 0, max: 100, step: 5, unit_of_measurement: '%' }),
+    'switch.ess_force_charge': S('off'),
+    'number.gx_device_ess_max_charge_current': S(100, { min: -1, max: 10000, step: 1, unit_of_measurement: 'A' }),
+    'number.gx_device_ess_max_charge_power_limit': S(-1, { min: -1, max: 1000000, step: 50, unit_of_measurement: 'W' }),
+    'number.gx_device_ess_max_inverter_power_limit': S(-1, { min: -1, max: 1000000, step: 50, unit_of_measurement: 'W' }),
+    'number.gx_device_ess_max_feed_in_power': S(7055, { min: -1, max: 1000000, step: 1, unit_of_measurement: 'W' }),
+    'sensor.demo_battery_power': S(bp, { unit_of_measurement: 'W' }),
+    'sensor.demo_battery_voltage': S(52.31, { unit_of_measurement: 'V' }),
+    'sensor.demo_battery_current': S(bp / 52.3, { unit_of_measurement: 'A' }),
+    'sensor.demo_battery_temperature': S(13.5, { unit_of_measurement: '°C' }),
+    'sensor.demo_time_left': S(bat === 'dis' ? '5h 47min' : 'Nu se descarca'),
+    'sensor.demo_time_to_full': S(bat === 'chg' ? '2h 05min' : 'Nu se incarca'),
   };
   const hass = {
     states, calls: [], user: { is_admin: q.get('admin') !== '0' },
@@ -104,6 +125,20 @@
           if (Object.keys(hs).length) out[k] = hs;
         }
         return { codes: ['Pe', 'Be', 'Ge'], hours: out };
+      }
+      if (m.type === 'victron_vrm/flows') {
+        const idx = m.codes.map((c) => CODES.indexOf(c)), out = {};
+        for (const [k, day] of Object.entries(hours)) {
+          if (k < m.start || k > m.end) continue;
+          const hs = Object.fromEntries(Object.entries(day).map(([hh, v]) => [hh, idx.map((i) => v[i])]).filter(([, v]) => v.some((x) => x > 0)));
+          if (Object.keys(hs).length) out[k] = hs;
+        }
+        return { codes: m.codes, hours: out };
+      }
+      // statisticile HA pentru SoC: minim / maxim / medie pe zi, de la socFrom
+      if (m.type === 'recorder/statistics_during_period') {
+        const a = iso(new Date(m.start_time)), b = iso(new Date(+new Date(m.end_time) - 1));
+        return { [m.statistic_ids[0]]: Object.entries(socDay).filter(([k]) => k >= a && k <= b && k >= socFrom).map(([, p]) => p) };
       }
       if (m.type === 'victron_vrm/finance') {
         hass.calls.push(m);
@@ -135,7 +170,9 @@
     },
   };
   const el = document.createElement('victron-vrm-card');
-  el.setConfig({ view, automation: 'automation.energie_vrm', charger: 'evcs_demo', car: 'ev_demo' });
+  el.setConfig({ view, automation: 'automation.energie_vrm', charger: 'evcs_demo', car: 'ev_demo', capacity: 20,
+    battery: { power: 'sensor.demo_battery_power', voltage: 'sensor.demo_battery_voltage', current: 'sensor.demo_battery_current',
+      temp: 'sensor.demo_battery_temperature', left: 'sensor.demo_time_left', full: 'sensor.demo_time_to_full' } });
   el.hass = hass;
   document.getElementById('c').appendChild(el);
   window.el = el; window.hassFake = hass;
