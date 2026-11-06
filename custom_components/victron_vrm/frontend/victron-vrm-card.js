@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.13.0';
+const VERSION = '0.13.1';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -141,8 +141,9 @@ const ESS_MODES = [['optimized_battery_life', 'Cu BatteryLife'], ['optimized_no_
 const ESS_NOTE = { optimized_battery_life: 'Optimizat cu BatteryLife: rezerva urcă și coboară singură, ca bateria să ajungă des la 100%',
   optimized_no_battery_life: 'Optimizat: bateria alimentează casa până la SoC-ul minim', keep_batteries_charged: 'Menține încărcată: bateria e folosită doar când pică rețeaua',
   external_control: 'Control extern: ESS e comandat din afara GX-ului' };
-// limitele ESS: -1 înseamnă fără limită
-const BAT_LIMS = [['maxI', 'Curent maxim de încărcare', 'A'], ['maxC', 'Putere maximă de încărcare', 'W'], ['maxInv', 'Putere maximă a invertorului', 'W'], ['maxFeed', 'Injecție maximă în rețea', 'W']];
+// limitele ESS: -1 înseamnă fără limită; al patrulea câmp e o explicație sub câmp
+const BAT_LIMS = [['maxI', 'Curent maxim de încărcare', 'A', ''], ['maxC', 'Putere maximă de încărcare', 'W', ''],
+  ['maxInv', 'Putere maximă de descărcare', 'W', 'Limita invertorului din ESS: cât scoate din baterie spre consum (include și solarul de pe DC)'], ['maxFeed', 'Injecție maximă în rețea', 'W', '']];
 const BAT_NAMES = { Pb: 'Încărcare din solar', Gb: 'Încărcare din rețea', Bc: 'Descărcare spre consum', Bg: 'Descărcare în rețea' };
 const BAT_CODES = ['Pb', 'Gb', 'Bc', 'Bg'];
 const BAT_CHARTS = [
@@ -368,6 +369,15 @@ dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 .cf[hidden]{display:none}
 .cf .t{flex:1 1 240px;font-size:15px;line-height:1.45}
 .bat-st{margin:8px 0 0}.bat-st:empty{display:none}
+.sl{display:flex;align-items:flex-start;gap:10px}
+.sl .rg{display:grid;gap:2px;padding-top:6px}
+.sl input[type=range]{width:220px;max-width:50vw;margin:0;accent-color:${C.sel};cursor:pointer}
+.sl .sc{display:flex;justify-content:space-between;font-size:12px;color:${C.muted};font-variant-numeric:tabular-nums}
+.sl input[type=text]{width:60px;background:${C.page};color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;height:36px;padding:0 8px;font:inherit;font-size:16px;text-align:right;font-variant-numeric:tabular-nums;box-sizing:border-box}
+.sl input:focus-visible{outline:2px solid ${C.focus};outline-offset:1px}
+.sl .u{color:${C.muted};font-size:14px;line-height:36px}
+.fld .h{font-size:13px;color:${C.muted};line-height:1.4}
+.lims .fld{align-content:start}
 button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
 @media (max-width:700px){.w{padding:8px}.hm{display:inline}.hn{display:none}.kpi .v{font-size:24px}.nav .t{font-size:20px}table{font-size:14px}th{font-size:12px}th,td{padding:7px 3px}}
 `;
@@ -958,17 +968,20 @@ ${ytable}
     const left = S('left') ? S('left').state : null, full = S('full') ? S('full').state : null;
     const t = chg && isDur(full) ? [full, 'până la 100%'] : dis && isDur(left) ? [left, 'până la rezervă'] : null;
     const tK = (E.left || E.full) ? kpi('Autonomie', t ? esc(t[0]) : '—', '', t ? t[1] : esc((chg ? full : left) || 'nu se descarcă')) : '';
-    const ms = S('minsoc'), msv = this._batM != null ? this._batM : num('minsoc'), mstep = ms && +ms.attributes.step > 0 ? +ms.attributes.step : 5;
+    const ms = S('minsoc'), msv = this._batM != null ? this._batM : num('minsoc');
     const mmin = ms && isFinite(+ms.attributes.min) ? +ms.attributes.min : 0, mmax = ms && isFinite(+ms.attributes.max) ? +ms.attributes.max : 100;
     const modes = mode && !ESS_MODES.some(([k]) => k === mode) ? [...ESS_MODES, [mode, mode === 'external_control' ? 'Control extern' : mode]] : ESS_MODES;
     const ctl = [
       mode !== null ? `<div class="cg"><div class="l">Mod ESS</div><div class="seg bat-mode" role="group" aria-label="Modul ESS">${modes.map(([k, l]) => `<button data-m="${k}" aria-pressed="${k === mode}">${l}</button>`).join('')}</div></div>` : '',
-      ms ? `<div class="cg"><div class="l">SoC minim</div><div class="step"><button class="tb bat-dn" aria-label="Scade SoC-ul minim"${msv <= mmin ? ' disabled' : ''}>−</button><span class="bat-m" aria-live="polite">${isFinite(msv) ? F0(msv) : '—'}%</span><button class="tb bat-up" aria-label="Crește SoC-ul minim"${msv >= mmax ? ' disabled' : ''}>+</button></div></div>` : '',
+      ms ? `<div class="cg socm"><div class="l"><label for="bat-mi">SoC minim</label></div><div class="sl"><div class="rg"><input type="range" class="bat-ms" min="${mmin}" max="${mmax}" step="10" value="${isFinite(msv) ? msv : mmin}" list="bat-ticks" aria-label="SoC minim, din 10 în 10">`
+        + `<datalist id="bat-ticks">${Array.from({ length: Math.floor((mmax - mmin) / 10) + 1 }, (_, i) => `<option value="${mmin + i * 10}"></option>`).join('')}</datalist>`
+        + `<div class="sc"><span>${F0(mmin)}</span><span>${F0((mmin + mmax) / 2)}</span><span>${F0(mmax)}</span></div></div>`
+        + `<input id="bat-mi" class="bat-mi" type="text" inputmode="numeric" autocomplete="off" value="${isFinite(msv) ? F0(msv) : ''}"><span class="u">%</span></div></div>` : '',
       force !== null ? `<div class="cg"><div class="l">Încărcare forțată din rețea</div><button class="sw bat-force" role="switch" aria-checked="${force}" aria-label="Încărcare forțată din rețea"></button></div>` : '',
     ].join('');
-    const lims = BAT_LIMS.filter(([k]) => S(k)).map(([k, l, u]) => {
+    const lims = BAT_LIMS.filter(([k]) => S(k)).map(([k, l, u, h]) => {
       const v = num(k);
-      return `<div class="fld"><label for="lim-${k}">${l}</label><div class="in"><input id="lim-${k}" data-k="${k}" type="text" inputmode="numeric" autocomplete="off" placeholder="fără limită" value="${isFinite(v) && v >= 0 ? F0(v).replace(/\./g, '') : ''}"><span>${u}</span></div></div>`;
+      return `<div class="fld"><label for="lim-${k}">${l}</label><div class="in"><input id="lim-${k}" data-k="${k}" type="text" inputmode="numeric" autocomplete="off" placeholder="fără limită" value="${isFinite(v) && v >= 0 ? F0(v).replace(/\./g, '') : ''}"${h ? ` aria-describedby="lim-${k}-h"` : ''}><span>${u}</span></div>${h ? `<div class="h" id="lim-${k}-h">${h}</div>` : ''}</div>`;
     }).join('');
     return `<div class="box live">
  <div class="hd"><div><div class="ttl">Bateria acum</div><div class="note" style="margin:0">${mode ? esc(ESS_NOTE[mode] || mode) : 'acum'}</div></div>
@@ -1011,26 +1024,35 @@ ${ytable}
         call('switch', on ? 'turn_on' : 'turn_off', { entity_id: E.force }).then(() => msg(on ? 'Încărcarea forțată a pornit.' : 'Încărcarea forțată s-a oprit.', 'ok'), fail).finally(() => { force.disabled = false; });
       });
     });
-    // SoC-ul minim se trimite după o scurtă pauză, ca apăsările repetate să ajungă ca o singură comandă
-    const ms = this._hass.states[E.minsoc];
-    const step = (d) => {
-      const s = ms && +ms.attributes.step > 0 ? +ms.attributes.step : 5;
-      const lo = ms && isFinite(+ms.attributes.min) ? +ms.attributes.min : 0, hi = ms && isFinite(+ms.attributes.max) ? +ms.attributes.max : 100;
-      const base = this._batM != null ? this._batM : parseFloat(ms && ms.state);
-      if (!isFinite(base)) return;
-      this._batM = Math.max(lo, Math.min(hi, base + d * s));
-      box.querySelector('.bat-m').textContent = `${F0(this._batM)}%`;
-      box.querySelector('.bat-dn').disabled = this._batM <= lo; box.querySelector('.bat-up').disabled = this._batM >= hi;
-      clearTimeout(this._batT);
+    // SoC-ul minim: sliderul (din 10 în 10) trimite la eliberare, câmpul la Enter sau la ieșirea din el
+    const ms = this._hass.states[E.minsoc], rg = box.querySelector('.bat-ms'), mi = box.querySelector('.bat-mi');
+    const lo = ms && isFinite(+ms.attributes.min) ? +ms.attributes.min : 0, hi = ms && isFinite(+ms.attributes.max) ? +ms.attributes.max : 100;
+    const send = (value, delay) => {
+      this._batM = value; clearTimeout(this._batT);
       this._batT = setTimeout(() => {
-        const value = this._batM;
         call('number', 'set_value', { entity_id: E.minsoc, value }).then(() => msg(`SoC minim: ${F0(value)}%.`, 'ok'), fail)
           .finally(() => { if (this._batM === value) { this._batM = null; this._syncBat(true); } });
-      }, 800);
+      }, delay);
     };
-    const dn = box.querySelector('.bat-dn'), up = box.querySelector('.bat-up');
-    if (dn) dn.addEventListener('click', () => step(-1));
-    if (up) up.addEventListener('click', () => step(1));
+    if (rg) {
+      rg.addEventListener('input', () => { this._batM = +rg.value; mi.value = rg.value; clearTimeout(this._batT); });
+      rg.addEventListener('change', () => send(+rg.value, 300));
+    }
+    if (mi) {
+      mi.addEventListener('input', () => { this._batTyping = true; });
+      mi.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') mi.blur(); });
+      mi.addEventListener('change', () => {
+        this._batTyping = false;
+        const n = parseNum(mi.value), cur = parseFloat(ms && ms.state);
+        if (n === null || !isFinite(n) || Math.round(n) !== n || n < lo || n > hi) {
+          msg(`SoC minim: scrie un număr întreg între ${F0(lo)} și ${F0(hi)}.`, 'warn');
+          mi.value = isFinite(cur) ? F0(cur) : ''; if (rg && isFinite(cur)) rg.value = cur;
+          return;
+        }
+        if (rg) rg.value = n;
+        if (n !== cur) send(n, 0);
+      });
+    }
     box.querySelectorAll('.lims input').forEach((i) => i.addEventListener('input', () => { this._batDirty = true; }));
     const apply = box.querySelector('.bat-lim');
     if (apply) apply.addEventListener('click', () => {
@@ -1060,7 +1082,7 @@ ${ytable}
     const box = this.shadowRoot && this.shadowRoot.querySelector('.live');
     if (!box || !this._hass) return;
     const key = this._batKey();
-    if (this._batM != null || this._batAsk || this._batDirty) return;
+    if (this._batM != null || this._batAsk || this._batDirty || this._batTyping) return;
     if (!force && key === this._batK) return;
     this._batK = key;
     const keep = box.querySelector('.bat-st'), note = keep ? [keep.textContent, keep.className] : null;
