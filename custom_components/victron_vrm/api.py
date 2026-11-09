@@ -88,3 +88,21 @@ class VrmApi:
             code: records[code] if isinstance(records.get(code), list) else []
             for code in CODES
         }
+
+    async def async_get_forecast_hours(
+        self, site_id: int, start: int, end: int
+    ) -> dict[str, list[list[float]]]:
+        """Return VRM's hourly forecasts between two unix timestamps.
+
+        Each value is a list of [timestamp_ms, Wh] pairs (Wh, unlike the kWh of
+        the custom stats), the timestamp being the start of the hour. Series
+        VRM has nothing for come back as `false` and are left out.
+        """
+        data = await self._get(
+            f"/installations/{site_id}/stats",
+            {"type": "forecast", "interval": "hours", "start": start, "end": end},
+        )
+        records = data.get("records") or {}
+        if not isinstance(records, dict):
+            return {}
+        return {k: v for k, v in records.items() if isinstance(v, list)}

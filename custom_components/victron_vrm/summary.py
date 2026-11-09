@@ -62,8 +62,25 @@ def pct(part: float, whole: float) -> str:
     return f"{round(part / whole * 100)}%" if whole > 0 else "—"
 
 
-def summarize(period: str, day: date, vals: list[float] | None, days: int) -> dict[str, Any]:
-    """Build the service response for one period from its CODES-ordered totals."""
+def forecast_line(fc: dict[str, Any]) -> str:
+    """One notification line with today's VRM forecast: solar, consumption, of which the car."""
+    solar, cons, ev = fc["t"]
+    car = f", din care mașina ~{kwh(ev)}" if ev >= 0.1 else ""
+    return f"🔮 Azi, după prognoza VRM: soare ~{kwh(solar)} kWh · consum ~{kwh(cons)} kWh{car}"
+
+
+def summarize(
+    period: str,
+    day: date,
+    vals: list[float] | None,
+    days: int,
+    forecast: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the service response for one period from its CODES-ordered totals.
+
+    `forecast` ({"date", "t": [solar, consumption, ev]}) adds today's VRM
+    forecast to the response and a line to the message.
+    """
     start, end = bounds(period, day)
     v = {c: max(0.0, float(vals[i])) if vals and i < len(vals) else 0.0 for i, c in enumerate(CODES)}
     house_solar = max(0.0, v["Pc"] - v["Pe"])
@@ -105,8 +122,18 @@ def summarize(period: str, day: date, vals: list[float] | None, days: int) -> di
     }
 
     out["title"] = f"Energie · {out['label']}"
+    if forecast:
+        f_solar, f_cons, f_ev = forecast["t"]
+        out["forecast"] = {
+            "date": forecast["date"].isoformat(),
+            "production": r2(f_solar),
+            "consumption": r2(f_cons),
+            "ev": r2(f_ev),
+        }
     if not out["has_data"]:
         out["message"] = "Nu există date VRM pentru această perioadă."
+        if forecast:
+            out["message"] += "\n" + forecast_line(forecast)
         return out
 
     per_day = f" ({kwh(prod / days)} kWh/zi)" if period != "day" and days else ""
@@ -126,5 +153,7 @@ def summarize(period: str, day: date, vals: list[float] | None, days: int) -> di
     lines.append(
         f"Independență {pct(v['Pc'] + v['Bc'], cons)} · Autoconsum {pct(v['Pc'] + v['Pb'], prod)}"
     )
+    if forecast:
+        lines.append(forecast_line(forecast))
     out["message"] = "\n".join(lines)
     return out

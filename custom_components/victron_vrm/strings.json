@@ -29,7 +29,14 @@
     }
   },
   "entity": {
-    "sensor": { "last_sync": { "name": "Last sync" } }
+    "sensor": {
+      "last_sync": { "name": "Last sync" },
+      "forecast_solar_today": { "name": "Solar forecast today" },
+      "forecast_solar_remaining": { "name": "Solar forecast remaining today" },
+      "forecast_solar_tomorrow": { "name": "Solar forecast tomorrow" },
+      "forecast_consumption_today": { "name": "Consumption forecast today" },
+      "forecast_consumption_tomorrow": { "name": "Consumption forecast tomorrow" }
+    }
   },
   "services": {
     "resync": {

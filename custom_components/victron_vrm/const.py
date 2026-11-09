@@ -23,6 +23,12 @@ CODES = ("Pc", "Pb", "Pg", "Bc", "Bg", "Gc", "Gb", "Pe", "Be", "Ge")
 EV_CODES = ("Pe", "Be", "Ge")
 
 UPDATE_INTERVAL = timedelta(minutes=15)
+# VRM forecasts: fetched at most this often, kept this many days back, read this many days ahead
+FORECAST_INTERVAL = timedelta(hours=1)
+FORECAST_KEEP_DAYS = 62
+FORECAST_AHEAD_DAYS = 8
+# Days compared for the forecast accuracy ratio
+ACCURACY_DAYS = 14
 # A month is re-fetched once this long after it ends, then never again.
 FINALIZE_DELAY = timedelta(days=2)
 # Pause between history requests so the backfill stays gentle on the VRM API.

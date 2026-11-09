@@ -70,6 +70,28 @@
     Y.t = add(Y.t, t); Y.m[m] = add(Y.m[m] || zero(), t); Y.n[m] = (Y.n[m] || 0) + 1;
   }
 
+  // prognoza VRM (kWh: [solar, consum, mașină]) pe ore, cu 62 de zile în urmă și 7 înainte:
+  // pentru zilele trecute realul cu o abatere pe zi, pentru cele viitoare modelul cu cer pe jumătate senin
+  const fcDays = {};
+  for (let i = -62; i <= 7; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i), k = iso(d), r = rng(+d / 864e5 + 7);
+    const fs = 0.7 + 0.45 * r(), fk = 0.85 + 0.3 * r(), h = {};
+    const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5), len = 12 + 3.6 * Math.sin(2 * Math.PI * (doy - 80) / 365), rise = 13 - len / 2;
+    for (let hh = 0; hh < 24; hh++) {
+      const a = hours[k] && i < 0 ? hours[k][p2(hh)] : null;
+      let pv, cons, ev;
+      if (a) { pv = a[0] + a[1] + a[2]; cons = a[0] + a[3] + a[5]; ev = a[7] + a[8] + a[9]; }
+      else {
+        const x = (hh + 0.5 - rise) / len;
+        pv = x > 0 && x < 1 ? PEAK * SUN[d.getMonth()] * 0.6 * Math.sin(Math.PI * x) ** 1.5 : 0;
+        ev = d >= EV_FROM && i % 3 === 1 && hh >= 19 && hh < 22 ? 2.3 : 0;
+        cons = 0.45 + (hh >= 7 && hh < 9 ? 0.6 : 0) + (hh >= 18 && hh < 23 ? 1.0 : 0) + ev;
+      }
+      h[p2(hh)] = [pv * fs, cons * fk, ev * fk].map((x) => Math.round(x * 1000) / 1000);
+    }
+    fcDays[k] = { t: Object.values(h).reduce((acc, v) => acc.map((x, j) => x + v[j]), [0, 0, 0]), h };
+  }
+
   const view = q.get('view') || 'zi';
   const evs = q.get('ev') || 'charging', live = evs === 'charging';
   const bat = q.get('bat') || 'dis', bp = bat === 'chg' ? 3120 : bat === 'dis' ? -685 : 4;
@@ -117,6 +139,7 @@
       if (m.type === 'victron_vrm/years') return { codes: CODES, years };
       if (m.type === 'victron_vrm/days') return { codes: CODES, days: Object.fromEntries(Object.entries(dayT).filter(([k]) => k >= m.start && k <= m.end)) };
       if (m.type === 'victron_vrm/hours') return { codes: CODES, hours: hours[m.date] || {} };
+      if (m.type === 'victron_vrm/forecast') return { codes: ['solar', 'consumption', 'ev'], fetched: new Date().toISOString(), days: Object.fromEntries(Object.entries(fcDays).filter(([k]) => k >= m.start && k <= m.end)) };
       if (m.type === 'victron_vrm/ev') {
         const idx = ['Pe', 'Be', 'Ge'].map((c) => CODES.indexOf(c)), out = {};
         for (const [k, day] of Object.entries(hours)) {

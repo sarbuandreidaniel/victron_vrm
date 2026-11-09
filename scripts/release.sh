@@ -52,7 +52,7 @@ EOF
 
 # 2. checks
 node --check "$CARD"
-for t in scripts/test_summary.py scripts/test_history.py scripts/test_frontend.py; do
+for t in scripts/test_summary.py scripts/test_history.py scripts/test_frontend.py scripts/test_forecast.py; do
   "$PY" "$t" > /dev/null && echo "ok $t"
 done
 

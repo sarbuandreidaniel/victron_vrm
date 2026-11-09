@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
 from .const import CODES, DOMAIN, EV_CODES, FINANCE_KEYS, OPT_FINANCE
+from .forecast import FC_KEYS
 from .history import VrmHistory
 
 MAX_DAYS = 400
@@ -49,6 +50,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_hours)
     websocket_api.async_register_command(hass, ws_ev)
     websocket_api.async_register_command(hass, ws_flows)
+    websocket_api.async_register_command(hass, ws_forecast)
     websocket_api.async_register_command(hass, ws_finance)
 
 
@@ -162,6 +164,31 @@ def ws_flows(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
         return
     codes = msg["codes"]
     connection.send_result(msg["id"], {"codes": codes, "hours": h.flow_hours(start, end, codes)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/forecast",
+        vol.Required("start"): _parse,
+        vol.Required("end"): _parse,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def ws_forecast(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """VRM's forecasts per day between two dates (inclusive): totals and hours, in kWh."""
+    if (entry := _entry(hass, msg)) is None:
+        return _not_loaded(connection, msg)
+    start, end = msg["start"], msg["end"]
+    if end < start or (end - start).days > MAX_DAYS:
+        connection.send_error(msg["id"], "invalid_range", f"Range must be 0–{MAX_DAYS} days")
+        return
+    fc = entry.runtime_data.forecast
+    connection.send_result(msg["id"], {
+        "codes": FC_KEYS,
+        "days": fc.days(start, end),
+        "fetched": fc.data.get("fetched"),
+    })
 
 
 @websocket_api.websocket_command(

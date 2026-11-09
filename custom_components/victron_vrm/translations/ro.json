@@ -29,7 +29,14 @@
     }
   },
   "entity": {
-    "sensor": { "last_sync": { "name": "Ultima sincronizare" } }
+    "sensor": {
+      "last_sync": { "name": "Ultima sincronizare" },
+      "forecast_solar_today": { "name": "Prognoză solar azi" },
+      "forecast_solar_remaining": { "name": "Prognoză solar rămas azi" },
+      "forecast_solar_tomorrow": { "name": "Prognoză solar mâine" },
+      "forecast_consumption_today": { "name": "Prognoză consum azi" },
+      "forecast_consumption_tomorrow": { "name": "Prognoză consum mâine" }
+    }
   },
   "services": {
     "resync": {

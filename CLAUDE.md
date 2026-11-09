@@ -12,9 +12,10 @@ Card internals (constants, methods, CSS, recipes) are in [docs/card.md](docs/car
 |---|---|
 | `custom_components/victron_vrm/api.py` | VRM client (`/installations/<id>/stats?type=custom&interval=hours`) |
 | `history.py` | cache: fetch, bucket per local hour, totals per day / month / year |
-| `coordinator.py`, `sensor.py` | 15-minute refresh of yesterday + today, last-sync sensor |
+| `forecast.py` | VRM forecasts (`/stats?type=forecast`, Wh): solar, consumption, EV charger per local hour, fetched hourly, 62 days back and 7 ahead, in `.storage/victron_vrm.<entry_id>.forecast` |
+| `coordinator.py`, `sensor.py` | 15-minute refresh of yesterday + today (forecasts at most hourly), last-sync sensor, forecast sensors (solar today / remaining today / tomorrow, consumption today / tomorrow; hours as attribute, `accuracy` = actual ÷ forecast production over the last 14 days) |
 | `websocket.py` | card API: `victron_vrm/info`, `years`, `days`, `hours`, `finance` |
-| `summary.py`, `__init__.py`, `services.yaml` | services `summary` (response only) and `resync` |
+| `summary.py`, `__init__.py`, `services.yaml` | services `summary` (response only; yesterday's day summary adds today's forecast as `forecast` and a last message line) and `resync` |
 | `frontend.py` | registers the card as an inline `data:` Lovelace module and refreshes it on startup |
 | `frontend/victron-vrm-card.js` | the card, one self-contained file; must start with `/* victron-vrm-card` |
 | `const.py` | `CODES`, intervals, option keys |
@@ -62,6 +63,7 @@ All commands take an optional `entry_id`.
 | `victron_vrm/hours` (`date`) | `codes, hours: {HH: values}` |
 | `victron_vrm/ev` (`start`, `end`) | `codes: [Pe, Be, Ge], hours: {YYYY-MM-DD: {HH: [Pe, Be, Ge]}}`, only hours with EV energy; the Mașina view asks for the whole history once |
 | `victron_vrm/flows` (`start`, `end`, `codes`) | `codes, hours: {YYYY-MM-DD: {HH: values in the order of codes}}`, only hours where one of `codes` is non-zero, at most 400 days; the Baterie view asks for the shown month with `[Pb, Gb, Bc, Bg]` |
+| `victron_vrm/forecast` (`start`, `end`) | `codes: [solar, consumption, ev], days: {YYYY-MM-DD: {t, h: {HH: values}}}, fetched`, kWh |
 | `victron_vrm/finance` (admin) | saves the finance options, answers `{finance}` |
 
 `finance` lives in the config entry options: `investment` (lei), `prices: [{from: "YYYY-MM" | null, import, export}]` (lei/kWh), plus `price_import` / `price_export` mirroring the last price. The handler sorts by `from`, forces the first `from` to null and rejects two prices starting in the same month. Entries saved before price history have only the two plain fields; the card's `priceList()` turns them into one period.

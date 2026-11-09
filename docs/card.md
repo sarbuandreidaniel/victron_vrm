@@ -35,7 +35,8 @@ File: `custom_components/victron_vrm/frontend/victron-vrm-card.js`. Data model, 
 | `EVCS_ST`, `CAR_ST`, `EV_MODES`, `EV_MODE_NOTE`, `dur` | charger / car states in Romanian, charger modes, minutes as text |
 | `BAT_DEF`, `ESS_MODES`, `ESS_NOTE`, `BAT_LIMS`, `BAT_NAMES`, `BAT_CODES`, `BAT_CHARTS`, `isDur`, `MONTH_V` | Baterie view: default entities, ESS modes, limits, chart definitions; `MONTH_V` = views navigated by month |
 | `rangeChart(W, H, rows, o)` | SVG min–max bars with a mean tick (SoC per day, 0–100 %), same `.hit` / `.hl` hover zones as `barChart` |
-| `barChart(W, H, rows, o)` | SVG stacked bars, up and down, optional line |
+| `barChart(W, H, rows, o)` | SVG stacked bars, up and down, optional line, optional dashed forecast line (`dash`: row field) |
+| `FC_CHARTS`, `FC_V`, `FC_AHEAD`, `withFc`, `sumK` | VRM forecast: charts (bars = actual, dashed `r.fsol` / `r.fcons`), views with forecast (zi, saptamana, luna), days ahead, rows ← `victron_vrm/forecast` |
 | `RAW_CSS` → `CSS` | styles; font sizes rewritten to scale with `--fz` |
 
 ## 2. Element lifecycle
@@ -52,7 +53,8 @@ File: `custom_components/victron_vrm/frontend/victron-vrm-card.js`. Data model, 
 - `_range()` gives `{from, to}` for the view and `this._d`; `_shift(±1)` moves by one period; `_sync()` writes `?d=` with `history.replaceState`; `_go(view, d)` pushes a new HA URL and fires `location-changed` (works only inside HA).
 - Data: zi → `hours` (24 rows), saptamana/luna → `days`, an → `years` (12 month rows + a "Pe ani" table from `_yearsTable()`).
 - `_render()` builds: nav box (title, ‹ Azi/Acum ›) with a one-paragraph summary (`.take`), KPI grid (production, house, car if any, import, injection, independence, self-consumption, battery charge/discharge, losses on Lună/An), chart boxes, the detail table (rows drill down: an → luna → zi), and `_foot()` (site, last sync, history start).
-- Empty periods show a message instead (or "istoricul se descarcă" during backfill).
+- Empty periods show a message instead (or "istoricul se descarcă" during backfill); an empty period with forecast (a future day or week) shows `_renderFc()`: three KPIs, the forecast charts with only the dashed line, a forecast table.
+- Forecast: `_load` adds `r.fsol / fcons / fev` through `withFc` (an older integration without the command just gives no forecast). `FC_CHARTS` come first when the period reaches today, last otherwise; `_fcTake()` adds a sentence to the summary; `_atEnd()` lets › go up to `FC_AHEAD` days ahead on Zi and Săptămână.
 
 ## 4. Amortizare (`_renderPay`)
 

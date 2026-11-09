@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.13.1';
+const VERSION = '0.14.0';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -191,7 +191,8 @@ function barChart(W, H, rows, o) {
   const up = o.up || [], down = o.down || [], line = o.line, fz = o.fz || 1, fs = Math.round(12 * fz);
   const ml = Math.round(44 * fz), mr = 8, mt = o.unit ? Math.round(24 * fz) : 10, mb = Math.round(26 * fz), iw = W - ml - mr, ih = H - mt - mb;
   const val = (r, c) => r.v[c];
-  const maxUp = Math.max(0.1, ...rows.map((r) => Math.max(up.reduce((a, c) => a + val(r, c), 0), line ? r[line] : 0)));
+  const dash = o.dash;
+  const maxUp = Math.max(0.1, ...rows.map((r) => Math.max(up.reduce((a, c) => a + val(r, c), 0), line ? r[line] : 0, dash && isFinite(r[dash]) ? r[dash] : 0)));
   const maxDn = down.length ? Math.max(0.1, ...rows.map((r) => down.reduce((a, c) => a + val(r, c), 0))) : 0;
   const nice = (v) => { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; };
   const top = nice(maxUp), bot = down.length ? nice(maxDn) : 0;
@@ -225,6 +226,11 @@ function barChart(W, H, rows, o) {
     g += `<polyline points="${pts.join(' ')}" fill="none" stroke="${C.fg}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     if (rows.length <= 14) rows.forEach((r, i) => { if (r.any) g += `<circle cx="${ml + i * step + step / 2}" cy="${y(r[line])}" r="4" fill="${C.fg}" stroke="${C.panel}" stroke-width="2"/>`; });
   }
+  if (dash) {
+    // prognoza, punctată: trece prin toate rândurile care au prognoză, și prin cele fără date reale
+    const pts = rows.map((r, i) => (isFinite(r[dash]) ? `${ml + i * step + step / 2},${y(r[dash])}` : null)).filter(Boolean);
+    if (pts.length) g += `<polyline points="${pts.join(' ')}" fill="none" stroke="${C.fg}" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
   g += `<line x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}" stroke="${C.axis}" stroke-width="1"/>`;
   rows.forEach((r, i) => { g += `<rect class="hit" data-i="${i}" x="${ml + i * step}" y="${mt}" width="${step}" height="${ih}" fill="transparent"${o.click ? ' style="cursor:pointer"' : ''}/>`; });
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect class="hl" x="0" y="${mt}" width="${step}" height="${ih}" fill="#ffffff" opacity="0" pointer-events="none"/>${g}</svg>`;
@@ -242,6 +248,24 @@ const CHARTS = [
   { id: 'ce', ttl: 'Stația de încărcare', note: 'Energia primită de mașină, după sursă', up: ['Pe', 'Be', 'Ge'], ev: true,
     names: { Pe: 'Din solar', Be: 'Din baterie', Ge: 'Din rețea' } },
 ];
+// prognoza VRM: barele arată realul, linia punctată prognoza (r.fsol / r.fcons, kWh)
+const FC_CHARTS = [
+  { id: 'fp', ttl: 'Producție față de prognoză', note: 'Barele arată producția reală, linia punctată prognoza VRM', up: ['Pc', 'Pb', 'Pg'], dash: 'fsol', dashName: 'Prognoză producție',
+    names: { Pc: 'Consumată direct', Pb: 'În baterie', Pg: 'În rețea' } },
+  { id: 'fk', ttl: 'Consum față de prognoză', note: 'Barele arată consumul real, cu mașina; linia punctată prognoza VRM', up: ['Pc', 'Bc', 'Gc'], dash: 'fcons', dashName: 'Prognoză consum',
+    names: { Pc: 'Din solar', Bc: 'Din baterie', Gc: 'Din rețea' } },
+];
+// vederile cu prognoză și câte zile după azi are prognoză (integrarea citește azi + 7 zile)
+const FC_V = ['zi', 'saptamana', 'luna'];
+const FC_AHEAD = 7;
+// pune prognoza pe rânduri: pe Zi orele zilei, altfel totalul fiecărei zile
+function withFc(rows, fc, v, day) {
+  if (!fc || !fc.days) return;
+  const at = (vals, r) => { if (!vals) return; r.fsol = +vals[0] || 0; r.fcons = +vals[1] || 0; r.fev = +vals[2] || 0; };
+  if (v === 'zi') { const d = fc.days[day]; if (d) rows.forEach((r) => at(d.h[r.k] || [0, 0, 0], r)); return; }
+  rows.forEach((r) => at(fc.days[r.k] && fc.days[r.k].t, r));
+}
+const sumK = (rows, k) => rows.reduce((a, r) => a + (isFinite(r[k]) ? r[k] : 0), 0);
 
 const RAW_CSS = `
 :host{display:block}
@@ -268,6 +292,7 @@ h2 small{font-weight:400;color:${C.muted};font-size:14px;margin-left:8px}
 .leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:${C.muted};margin-bottom:8px}
 .leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 .leg i.ln{height:2px;vertical-align:3px}
+.leg i.dash,.tip i.dash{width:14px;height:2px;vertical-align:3px;border-radius:0;background:repeating-linear-gradient(90deg,${C.fg} 0 5px,transparent 5px 8px)}
 .leg b{color:${C.fg};font-weight:500;margin-left:4px;font-variant-numeric:tabular-nums}
 .ch{position:relative;min-height:220px}
 .ch svg{display:block}
@@ -479,6 +504,12 @@ class VictronVrmCard extends HTMLElement {
     history.pushState(null, '', `${base}/${this._cfg.paths[view]}${d ? `?d=${iso(d)}` : ''}`);
     window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
   }
+  // ultima perioadă la care duce ›: azi, sau ultima zi cu prognoză pe Zi și Săptămână
+  _atEnd() {
+    const { to } = this._range(), t = today(), v = this._cfg.view;
+    if (this._fcOn && (v === 'zi' || v === 'saptamana')) return addDays(to, 1) > addDays(t, FC_AHEAD);
+    return to >= t;
+  }
   _title() {
     const { from, to } = this._range(), v = this._cfg.view;
     if (v === 'amortizare') return 'Amortizare';
@@ -576,8 +607,14 @@ class VictronVrmCard extends HTMLElement {
             tip: cap(`${ZILE[d.getDay()]}, ${d.getDate()} ${LUNI_L[d.getMonth()]}`), d, future: d > t }));
         }
       }
+      // prognoza VRM; o integrare mai veche nu are comanda, atunci pagina rămâne fără prognoză
+      let fc = null;
+      if (FC_V.includes(v)) {
+        try { fc = await this._ws({ type: 'victron_vrm/forecast', start: iso(from), end: iso(to) }, true); } catch (e) { fc = null; }
+        withFc(rows, fc, v, iso(from));
+      }
       if (seq !== this._seq) return;
-      this._info = info; this._rows = rows; this._years = years; this._err = null;
+      this._info = info; this._rows = rows; this._years = years; this._err = null; this._fcOn = !!(fc && fc.fetched);
     } catch (e) {
       if (seq !== this._seq) return;
       this._err = e && e.message ? e.message : String(e);
@@ -592,13 +629,14 @@ class VictronVrmCard extends HTMLElement {
     const v = this._cfg.view, t = today(), { from, to } = this._range();
     const nav = `<div class="box"><div class="nav"><div class="t">${esc(this._title())}</div>
       <div class="bt"><button class="prev" aria-label="Înapoi">‹</button><button class="now">${v === 'zi' ? 'Azi' : 'Acum'}</button>
-      <button class="next" aria-label="Înainte"${to >= t ? ' disabled' : ''}>›</button></div></div>${this._err ? '' : '<div class="take"></div>'}</div>`;
+      <button class="next" aria-label="Înainte"${this._atEnd() ? ' disabled' : ''}>›</button></div></div>${this._err ? '' : '<div class="take"></div>'}</div>`;
     if (this._err) {
       w.innerHTML = nav + `<div class="box msg">Nu am putut citi istoricul VRM: ${esc(this._err)}</div>`;
       return this._wire(w);
     }
     const rows = this._rows, tot = sum(rows), info = this._info;
     const n = rows.filter((r) => r.any).length;
+    if (!n && rows.some((r) => isFinite(r.fsol))) return this._renderFc(w, nav);
     if (!n) {
       const wait = info.backfilling ? 'Istoricul se descarcă din VRM; revino în câteva minute.' : `Nu există date VRM pentru această perioadă (istoricul începe pe ${esc(info.start)}).`;
       w.innerHTML = nav + `<div class="box msg">${wait}</div>${this._yearsTable()}${this._foot()}`;
@@ -632,19 +670,73 @@ class VictronVrmCard extends HTMLElement {
     this._tot = tot; this._wide = this._wide || loadWide();
     const box = (c) => this._box(c);
 
+    const hasFc = rows.some((r) => isFinite(r.fsol));
+    const fcFirst = to >= t;
+    const charts = [...(hasFc && fcFirst ? FC_CHARTS : []), ...CHARTS.filter((c) => !c.ev || hasEv), ...(hasFc && !fcFirst ? FC_CHARTS : [])];
+    this._chartList = charts;
+    this._fcTot = { fsol: sumK(rows, 'fsol'), fcons: sumK(rows, 'fcons') };
     const nk = 8 + (hasEv ? 1 : 0) + (showLoss ? 1 : 0);
     w.innerHTML = nav + `
 <div class="kpis" style="--k:${nk > 8 ? Math.ceil(nk / 2) : nk}">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.house), 'kWh', hasEv ? 'fără mașină' + (v === 'zi' ? '' : ' · ' + avg(tot.house)) : avg(tot.house))}${hasEv ? kpi('Stația de încărcare', kwh(tot.ev), 'kWh', `${share(tot.v.Pe + tot.v.Be, tot.ev)} din solar + baterie`) : ''}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
 ${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pctN(tot.indep), isFinite(tot.indep) ? '%' : '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pctN(tot.autoc), isFinite(tot.autoc) ? '%' : '', 'producție folosită în casă sau baterie')}</div>
-<div class="charts">${CHARTS.filter((c) => !c.ev || hasEv).map(box).join('')}</div>
+<div class="charts">${charts.map(box).join('')}</div>
 <div class="box"><div class="ttl">${{ zi: 'Pe ore', saptamana: 'Pe zile', luna: 'Pe zile', an: 'Pe luni' }[v]}</div>${drill ? '<div class="note">Apasă pe un rând pentru detalii</div>' : ''}
  <div class="tw"><table>${head(first)}<tbody>${body}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
 ${this._yearsTable()}${this._foot()}`;
-    w.querySelector('.take').innerHTML = take;
+    w.querySelector('.take').innerHTML = take + this._fcTake(rows, tot);
     w.querySelectorAll('tbody tr.go').forEach((tr) => tr.addEventListener('click', () => this._go(drill, rows[+tr.dataset.i].d || parse(rows[+tr.dataset.i].k))));
     this._wire(w);
     w.querySelectorAll('.wb').forEach((b) => b.addEventListener('click', () => this._toggleWide(b)));
-    w.querySelectorAll('.fb').forEach((b) => b.addEventListener('click', () => this._openFs(CHARTS.find((c) => c.id === b.dataset.c))));
+    w.querySelectorAll('.fb').forEach((b) => b.addEventListener('click', () => this._openFs(charts.find((c) => c.id === b.dataset.c))));
+    this._cws = {}; this._charts();
+  }
+  // o frază despre prognoza VRM, după rezumatul perioadei
+  _fcTake(rows, tot) {
+    const v = this._cfg.view, t = today(), fr = rows.filter((r) => isFinite(r.fsol));
+    if (!fr.length) return '';
+    const fs = sumK(fr, 'fsol'), fk = sumK(fr, 'fcons');
+    if (v === 'zi') {
+      const isToday = +this._range().from === +t;
+      const head = ` Prognoza VRM ${isToday ? 'pentru azi' : 'pentru această zi'} a fost de <b>${kwh(fs)} kWh</b> producție și <b>${kwh(fk)} kWh</b> consum.`;
+      if (!isToday) return head + ` Producția reală a fost <b>${pct(tot.prod / fs)}</b> din prognoză, consumul <b>${pct(tot.cons / fk)}</b>.`;
+      const now = new Date(), h = now.getHours();
+      const left = fr.reduce((a, r) => a + (+r.k > h ? r.fsol : +r.k === h ? r.fsol * (1 - now.getMinutes() / 60) : 0), 0);
+      const base = ` Prognoza VRM pentru azi este de <b>${kwh(fs)} kWh</b> producție și <b>${kwh(fk)} kWh</b> consum.`;
+      // după apus nu mai urmează nimic: producția zilei e deja cea finală
+      if (left < 0.05) return base + ` Panourile au produs <b>${pct(tot.prod / fs)}</b> din prognoză.`;
+      return base + ` Până acum s-a produs <b>${pct(tot.prod / fs)}</b> din prognoză; după ea ar mai urma <b>${kwh(left)} kWh</b>.`;
+    }
+    // zilele încheiate se compară cu realul, cele care urmează rămân doar prognoză
+    const past = fr.filter((r) => r.d < t && r.any), next = fr.filter((r) => r.d > t);
+    let s = '';
+    if (past.length) {
+      const a = sum(past);
+      s += ` În zilele încheiate, producția reală a fost <b>${pct(a.prod / sumK(past, 'fsol'))}</b> din prognoza VRM, iar consumul <b>${pct(a.cons / sumK(past, 'fcons'))}</b>.`;
+    }
+    if (next.length) s += ` Pentru ${next.length === 1 ? 'ziua care urmează' : `următoarele ${next.length} zile`} VRM prognozează <b>${kwh(sumK(next, 'fsol'))} kWh</b> producție și <b>${kwh(sumK(next, 'fcons'))} kWh</b> consum.`;
+    return s;
+  }
+  // o zi sau o săptămână fără date reale încă: doar prognoza VRM
+  _renderFc(w, nav) {
+    const rows = this._rows, v = this._cfg.view, fr = rows.filter((r) => isFinite(r.fsol));
+    const fs = sumK(fr, 'fsol'), fk = sumK(fr, 'fcons'), fev = sumK(fr, 'fev'), bal = fs - fk;
+    const kpi = (l, val, u, s = '') => `<div class="box kpi"><div class="l">${l}</div><div class="v">${val}<span class="u">${u}</span></div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+    const charts = FC_CHARTS.map((c) => ({ ...c, ttl: c.dashName, up: [], note: `Prognoza VRM pe ${v === 'zi' ? 'ore' : 'zile'}` }));
+    this._chartList = charts; this._tot = sum(rows); this._wide = this._wide || loadWide();
+    this._fcTot = { fsol: fs, fcons: fk };
+    const take = `Încă nu există date reale pentru ${v === 'zi' ? 'această zi' : 'această săptămână'}. După prognoza VRM, panourile ar produce <b>${kwh(fs)} kWh</b>, iar consumul ar fi de <b>${kwh(fk)} kWh</b>${fev >= 0.1 ? `, din care <b>${kwh(fev)} kWh</b> pentru mașină` : ''}. Prognoza se actualizează în fiecare oră.`;
+    const body = fr.map((r) => `<tr><td>${v === 'zi' ? `${r.label}:00` : `<span class="hn">${esc(r.tip)}</span><span class="hm">${esc(r.label)}</span>`}</td><td>${kwh(r.fsol)}</td><td>${kwh(r.fcons)}</td><td>${kwh(r.fev)}</td></tr>`).join('');
+    w.innerHTML = nav + `
+<div class="kpis" style="--k:3">${kpi('Producție prognozată', kwh(fs), 'kWh')}${kpi('Consum prognozat', kwh(fk), 'kWh', fev >= 0.1 ? `din care mașina ${kwh(fev)} kWh` : '')}${kpi('Bilanț', (bal < 0 ? '−' : '+') + kwh(Math.abs(bal)), 'kWh', bal < 0 ? 'lipsă acoperită din baterie sau rețea' : 'surplus pentru baterie sau rețea')}</div>
+<div class="charts">${charts.map((c) => this._box(c)).join('')}</div>
+<div class="box"><div class="ttl">Prognoză ${v === 'zi' ? 'pe ore' : 'pe zile'}</div>
+ <div class="tw"><table><thead><tr><th>${v === 'zi' ? 'Ora' : 'Ziua'}</th>${th('Producție', 'Prod.', 'kWh')}${th('Consum', 'Cons.', 'kWh')}${th('din care mașina', 'Maș.', 'kWh')}</tr></thead><tbody>${body}</tbody>
+ <tfoot><tr><td>Total</td><td>${kwh(fs)}</td><td>${kwh(fk)}</td><td>${kwh(fev)}</td></tr></tfoot></table></div></div>
+${this._foot()}`;
+    w.querySelector('.take').innerHTML = take;
+    this._wire(w);
+    w.querySelectorAll('.wb').forEach((b) => b.addEventListener('click', () => this._toggleWide(b)));
+    w.querySelectorAll('.fb').forEach((b) => b.addEventListener('click', () => this._openFs(charts.find((c) => c.id === b.dataset.c))));
     this._cws = {}; this._charts();
   }
   _yearsTable() {
@@ -674,7 +766,7 @@ ${this._yearsTable()}${this._foot()}`;
     }
     const tot = this._tot;
     const u = c.unit || 'kWh';
-    return `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${(c.num || kwh)(tot.v[k])}</b> ${u}</span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b> kWh</span>` : ''}</div>`;
+    return `<div class="leg">${[...c.up, ...(c.down || [])].map((k) => `<span><i style="background:${FLOW[k]}"></i>${c.names[k]}<b>${(c.num || kwh)(tot.v[k])}</b> ${u}</span>`).join('')}${c.line ? `<span><i class="ln" style="background:${C.fg}"></i>Producție<b>${kwh(tot.prod)}</b> kWh</span>` : ''}${c.dash ? `<span><i class="dash"></i>${c.dashName}<b>${kwh((this._fcTot || {})[c.dash] || 0)}</b> kWh</span>` : ''}</div>`;
   }
   _box(c) {
     const wide = this._wide.has(c.id), lbl = wide ? 'Lățime normală' : 'Lățime dublă';
@@ -710,7 +802,7 @@ ${this._yearsTable()}${this._foot()}`;
     // barele cresc odată cu graficul (lățime dublă / ecran complet), până la 2,5×
     const maxBar = Math.round((c.rows === 'hod' ? 18 : { zi: 18, saptamana: 40, luna: 16, an: 36, amortizare: 36, masina: 16, baterie: 16 }[v]) * Math.min(2.5, Math.max(1, W / 640)));
     const drill = c.drill !== undefined ? c.drill : v === 'an' || v === 'amortizare' ? 'luna' : v === 'zi' ? null : 'zi';
-    const svg = c.kind === 'soc' ? rangeChart(W, H, rows, { label, maxBar, labelW: 34, click: !!drill, fz: this._fz || 1, ref: this._socRef }) : barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, label, maxBar, unit: c.unit || 'kWh', labelW: v === 'zi' || c.rows === 'hod' ? 30 : v === 'amortizare' ? 44 : 34, click: !!drill, fz: this._fz || 1 });
+    const svg = c.kind === 'soc' ? rangeChart(W, H, rows, { label, maxBar, labelW: 34, click: !!drill, fz: this._fz || 1, ref: this._socRef }) : barChart(W, H, rows, { up: c.up, down: c.down, line: c.line, dash: c.dash, label, maxBar, unit: c.unit || 'kWh', labelW: v === 'zi' || c.rows === 'hod' ? 30 : v === 'amortizare' ? 44 : 34, click: !!drill, fz: this._fz || 1 });
     el.innerHTML = svg + '<div class="tip" hidden></div>';
     const tip = el.querySelector('.tip'), hl = el.querySelector('.hl');
     el.querySelectorAll('.hit').forEach((hit) => {
@@ -718,7 +810,8 @@ ${this._yearsTable()}${this._foot()}`;
       hit.addEventListener('mousemove', (ev) => {
         hl.setAttribute('x', hit.getAttribute('x')); hl.setAttribute('width', hit.getAttribute('width')); hl.setAttribute('opacity', '0.06');
         const lines = c.kind === 'soc' ? (isFinite(r.smin) ? `<div>Minim: ${F0(r.smin)}%</div><div>Maxim: ${F0(r.smax)}%</div>${isFinite(r.smean) ? `<div>Medie: ${F0(r.smean)}%</div>` : ''}` : '<div>Fără date</div>') : [...c.up, ...(c.down || [])].map((k) => `<div><i style="background:${FLOW[k]}"></i>${c.names[k]}: ${(c.num || F1)(r.v[k])} ${c.unit || 'kWh'}</div>`).join('')
-          + (c.line ? `<div><i style="background:${C.fg}"></i>Producție: ${F1(r.prod)} kWh</div>` : '');
+          + (c.line ? `<div><i style="background:${C.fg}"></i>Producție: ${F1(r.prod)} kWh</div>` : '')
+          + (c.dash && isFinite(r[c.dash]) ? `<div><i class="dash"></i>${c.dashName}: ${F1(r[c.dash])} kWh</div>` : '');
         tip.innerHTML = `<div class="d">${esc(r.tip)}</div>${lines}`;
         tip.hidden = false;
         const b = el.getBoundingClientRect(), x = ev.clientX - b.left, y = ev.clientY - b.top;
@@ -726,7 +819,7 @@ ${this._yearsTable()}${this._foot()}`;
         tip.style.top = Math.max(0, y - tip.offsetHeight - 8) + 'px';
       });
       hit.addEventListener('mouseleave', () => { tip.hidden = true; hl.setAttribute('opacity', '0'); });
-      if (drill && r.any) hit.addEventListener('click', () => this._go(drill, r.d || parse(r.k)));
+      if (drill && (r.any || (c.dash && isFinite(r[c.dash]) && r.d))) hit.addEventListener('click', () => this._go(drill, r.d || parse(r.k)));
     });
   }
 

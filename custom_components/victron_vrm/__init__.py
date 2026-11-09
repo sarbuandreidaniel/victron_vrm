@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import logging
 
 import voluptuous as vol
@@ -28,6 +28,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .coordinator import VrmCoordinator
+from .forecast import VrmForecast
 from .frontend import async_register_card, async_unregister_card
 from .history import VrmHistory
 from .summary import PERIODS, default_day, summarize
@@ -87,8 +88,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             raise ServiceValidationError("Victron VRM is not set up")
         period: str = call.data["period"]
         day: date = call.data.get("date") or default_day(period, dt_util.now().date())
-        vals, days = entry.runtime_data.history.period(period, day)
-        return summarize(period, day, vals, days)
+        coordinator: VrmCoordinator = entry.runtime_data
+        vals, days = coordinator.history.period(period, day)
+        # yesterday's summary is sent in the morning: add today's forecast
+        today = dt_util.now().date()
+        fc = coordinator.forecast.day(today) if period == "day" and day == today - timedelta(days=1) else None
+        return summarize(period, day, vals, days, forecast=fc and {"date": today, "t": fc["t"]})
 
     hass.services.async_register(
         DOMAIN,
@@ -111,8 +116,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> bool:
         date.fromisoformat(entry.data[CONF_HISTORY_START]),
     )
     await history.async_load()
+    forecast = VrmForecast(hass, entry.entry_id, api, int(entry.data[CONF_SITE_ID]))
+    await forecast.async_load()
 
-    coordinator = VrmCoordinator(hass, entry, history)
+    coordinator = VrmCoordinator(hass, entry, history, forecast)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
 
@@ -128,7 +135,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> bool
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> None:
-    """Delete the cached history together with the entry."""
+    """Delete the cached history and forecasts together with the entry."""
     await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}").async_remove()
+    await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.forecast").async_remove()
     if not hass.config_entries.async_entries(DOMAIN):
         await async_unregister_card(hass)
