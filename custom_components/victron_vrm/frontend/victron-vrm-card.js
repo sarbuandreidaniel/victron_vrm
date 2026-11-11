@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.14.1';
+const VERSION = '0.14.2';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -54,6 +54,13 @@ const sumRow = (k, n, segs = [], txt = []) => {
   const bar = segs.length && tot > 0 ? `<div class="bar">${segs.map(([x, c]) => (x > 0 ? `<span style="flex:${(x / tot).toFixed(4)} 0 0;background:${c}"></span>` : '')).join('')}</div>` : '';
   const p = [...segs.map(([x, c, w]) => `<span><i style="background:${c}"></i><b>${tot > 0 ? pct(Math.max(0, x) / tot) : '—'}</b> ${w}</span>`), ...txt.map((x) => `<span>${x}</span>`)];
   return `<div class="k">${k}</div><div class="n">${n}</div><div class="r">${bar}<div class="p">${p.join('')}</div></div>`;
+};
+// un rând de prognoză: valoarea prognozată, bara de progres (plin = real, punctat = ce mai urmează după prognoză)
+const fcRow = (k, f, done, left, pc, pw, lw) => {
+  const a = f > 0 ? Math.min(1, Math.max(0, done) / f) : 0, b = f > 0 && lw ? Math.min(1 - a, left / f) : 0;
+  const bar = `<div class="bar"><span style="flex:${a.toFixed(4)} 0 0;background:${C.soft}"></span>${b > 0 ? `<span class="fl" style="flex:${b.toFixed(4)} 0 0"></span>` : ''}<span style="flex:${Math.max(0, 1 - a - b).toFixed(4)} 0 0"></span></div>`;
+  const p = (pc ? `<span><i style="background:${C.soft}"></i><b>${pc}</b> ${pw}</span>` : '') + (lw ? `<span><i class="fl"></i><b>${kwh(left)} kWh</b> ${lw}</span>` : '');
+  return `<div class="k">${k}</div><div class="n">${kwU(f)}</div><div class="r">${bar}<div class="p">${p}</div></div>`;
 };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = (n) => String(n).padStart(2, '0');
@@ -298,6 +305,7 @@ const RAW_CSS = `
 .sum .p{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:14px;color:${C.soft};line-height:1.4}
 .sum .p b{color:${C.fg};font-weight:500;font-variant-numeric:tabular-nums}
 .sum .p i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:0}
+.sum .fl{background:#5c5c5c}
 h2{font-size:18px;font-weight:500;margin:10px 0 0;color:${C.fg}}
 h2 small{font-weight:400;color:${C.muted};font-size:14px;margin-left:8px}
 .ttl{color:${C.fg};font-size:16px;font-weight:500;margin:0 0 4px}
@@ -718,23 +726,18 @@ ${this._yearsTable()}${this._foot()}`;
     const fs = sumK(fr, 'fsol'), fk = sumK(fr, 'fcons');
     if (v === 'zi') {
       const isToday = +this._range().from === +t;
-      const now = new Date(), h = now.getHours();
-      const left = isToday ? fr.reduce((a, r) => a + (+r.k > h ? r.fsol : +r.k === h ? r.fsol * (1 - now.getMinutes() / 60) : 0), 0) : 0;
-      // după apus nu mai urmează nimic: producția zilei e deja cea finală
-      const p = [`<b>${pct(tot.prod / fs)}</b> realizat`];
-      if (left >= 0.05) p.push(`<b>${kwh(left)} kWh</b> mai urmează`);
-      p.push(`consum <b>${kwh(fk)} kWh</b>` + (isToday ? '' : ` · <b>${pct(tot.cons / fk)}</b> realizat`));
-      return sumRow('Prognoză VRM', kwU(fs), [], p);
+      const now = new Date(), h = now.getHours(), fr0 = 1 - now.getMinutes() / 60;
+      // ce mai urmează azi după prognoză; după apus producția zilei e deja cea finală
+      const rest = (k) => (isToday ? fr.reduce((a, r) => a + (+r.k > h ? r[k] : +r.k === h ? r[k] * fr0 : 0), 0) : 0);
+      const ls = rest('fsol'), lk = rest('fcons');
+      return fcRow('Prognoză producție', fs, tot.prod, ls, pct(tot.prod / fs), 'realizat', ls >= 0.05 ? 'mai urmează' : '')
+        + fcRow('Prognoză consum', fk, tot.cons, lk, pct(tot.cons / fk), 'realizat', lk >= 0.05 ? 'mai urmează' : '');
     }
-    // zilele încheiate se compară cu realul, cele care urmează rămân doar prognoză
-    const past = fr.filter((r) => r.d < t && r.any), next = fr.filter((r) => r.d > t);
-    let s = '';
-    if (past.length) {
-      const a = sum(past), ps = a.prod / sumK(past, 'fsol');
-      s += sumRow('Prognoză VRM', isFinite(ps) ? `${pctN(ps)}<small>%</small>` : '—', [], ['producție realizată', `consum <b>${pct(a.cons / sumK(past, 'fcons'))}</b>`]);
-    }
-    if (next.length) s += sumRow(next.length === 1 ? 'Mâine' : `Următoarele ${next.length} zile`, kwU(sumK(next, 'fsol')), [], ['producție prognozată', `consum <b>${kwh(sumK(next, 'fcons'))} kWh</b>`]);
-    return s;
+    // ca pe Zi: realul de până acum ÷ prognoza zilelor afișate, plus prognoza zilelor care urmează
+    const next = fr.filter((r) => r.d > t), done = sum(fr.filter((r) => r.d <= t && r.any));
+    const nw = next.length === 1 ? 'mâine' : `în următoarele ${next.length} zile`;
+    return fcRow('Prognoză producție', fs, done.prod, sumK(next, 'fsol'), pct(done.prod / fs), 'realizat', next.length ? nw : '')
+      + fcRow('Prognoză consum', fk, done.cons, sumK(next, 'fcons'), pct(done.cons / fk), 'realizat', next.length ? nw : '');
   }
   // o zi sau o săptămână fără date reale încă: doar prognoza VRM
   _renderFc(w, nav) {
