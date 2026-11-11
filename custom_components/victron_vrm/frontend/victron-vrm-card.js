@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.14.2';
+const VERSION = '0.14.3';
 // contrast față de panou (#1f1f1f): fg 16,5:1 · soft 10:1 · muted 6,5:1 (AA) · ctl 3,1:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#1f1f1f', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#a3a3a3',
   ctl: '#6b6b6b', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -413,7 +413,7 @@ dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 .btn.pri{background:#2f72d0;border-color:#2f72d0;color:#fff;font-weight:500;padding:0 20px}
 .btn.pri:hover:not(:disabled){background:#3a7fe0}
 .fst{margin:8px 0 0}.fst:empty{display:none}
-@media (max-width:480px){.pr{grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,1fr) 32px;gap:6px}.pr input{padding:0 6px}}
+@media (max-width:480px){.kpis.odd>:last-child{grid-column:1/-1}.pr{grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,1fr) 32px;gap:6px}.pr input{padding:0 6px}}
 .ok{color:#4cc04c}.warn{color:#e09a1a}
 .pill.dis{border-color:${FLOW.Bc}}.pill.dis i{background:${FLOW.Bc}}
 .lims{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:0 16px}
@@ -704,10 +704,10 @@ class VictronVrmCard extends HTMLElement {
     const charts = [...(hasFc && fcFirst ? FC_CHARTS : []), ...CHARTS.filter((c) => !c.ev || hasEv), ...(hasFc && !fcFirst ? FC_CHARTS : [])];
     this._chartList = charts;
     this._fcTot = { fsol: sumK(rows, 'fsol'), fcons: sumK(rows, 'fcons') };
-    const nk = 8 + (hasEv ? 1 : 0) + (showLoss ? 1 : 0);
+    // totalurile de producție, casă și mașină (și autoconsumul) sunt deja în rezumatul de sus
+    const nk = 5 + (showLoss ? 1 : 0);
     w.innerHTML = nav + `
-<div class="kpis" style="--k:${nk > 8 ? Math.ceil(nk / 2) : nk}">${kpi('Producție', kwh(tot.prod), 'kWh', avg(tot.prod))}${kpi('Consum casă', kwh(tot.house), 'kWh', hasEv ? 'fără mașină' + (v === 'zi' ? '' : ' · ' + avg(tot.house)) : avg(tot.house))}${hasEv ? kpi('Stația de încărcare', kwh(tot.ev), 'kWh', `${share(tot.v.Pe + tot.v.Be, tot.ev)} din solar + baterie`) : ''}${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}
-${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pctN(tot.indep), isFinite(tot.indep) ? '%' : '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pctN(tot.autoc), isFinite(tot.autoc) ? '%' : '', 'producție folosită în casă sau baterie')}</div>
+<div class="kpis${nk % 2 ? ' odd' : ''}" style="--k:${nk}">${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pctN(tot.indep), isFinite(tot.indep) ? '%' : '', 'consum acoperit de solar + baterie')}</div>
 <div class="charts">${charts.map(box).join('')}</div>
 <div class="box"><div class="ttl">${{ zi: 'Pe ore', saptamana: 'Pe zile', luna: 'Pe zile', an: 'Pe luni' }[v]}</div>${drill ? '<div class="note">Apasă pe un rând pentru detalii</div>' : ''}
  <div class="tw"><table>${head(first)}<tbody>${body}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
