@@ -52,9 +52,9 @@ File: `custom_components/victron_vrm/frontend/victron-vrm-card.js`. Data model, 
 
 - `_range()` gives `{from, to}` for the view and `this._d`; `_shift(±1)` moves by one period; `_sync()` writes `?d=` with `history.replaceState`; `_go(view, d)` pushes a new HA URL and fires `location-changed` (works only inside HA).
 - Data: zi → `hours` (24 rows), saptamana/luna → `days`, an → `years` (12 month rows + a "Pe ani" table from `_yearsTable()`).
-- `_render()` builds: nav box (title, ‹ Azi/Acum ›) with a one-paragraph summary (`.take`), KPI grid (production, house, car if any, import, injection, independence, self-consumption, battery charge/discharge, losses on Lună/An), chart boxes, the detail table (rows drill down: an → luna → zi), and `_foot()` (site, last sync, history start).
+- `_render()` builds: nav box (title, ‹ Azi/Acum ›) with a summary of rows (`.take > .sum`, one `sumRow(label, value, segs, txt)` each: Producție, Casa, Mașina when there is EV energy, each with a thin stacked bar in `FLOW` colours and its shares), KPI grid (production, house, car if any, import, injection, independence, self-consumption, battery charge/discharge, losses on Lună/An), chart boxes, the detail table (rows drill down: an → luna → zi), and `_foot()` (site, last sync, history start).
 - Empty periods show a message instead (or "istoricul se descarcă" during backfill); an empty period with forecast (a future day or week) shows `_renderFc()`: three KPIs, the forecast charts with only the dashed line, a forecast table.
-- Forecast: `_load` adds `r.fsol / fcons / fev` through `withFc` (an older integration without the command just gives no forecast). `FC_CHARTS` come first when the period reaches today, last otherwise; `_fcTake()` adds a sentence to the summary; `_atEnd()` lets › go up to `FC_AHEAD` days ahead on Zi and Săptămână.
+- Forecast: `_load` adds `r.fsol / fcons / fev` through `withFc` (an older integration without the command just gives no forecast). `FC_CHARTS` come first when the period reaches today, last otherwise; `_fcTake()` adds forecast rows to the summary (Zi: forecast production, % achieved, what is left today, consumption; longer periods: % achieved on finished days and the days ahead); `_atEnd()` lets › go up to `FC_AHEAD` days ahead on Zi and Săptămână.
 
 ## 4. Amortizare (`_renderPay`)
 
