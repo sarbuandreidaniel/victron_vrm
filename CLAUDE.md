@@ -14,7 +14,7 @@ Card internals (constants, methods, CSS, recipes) are in [docs/card.md](docs/car
 | `history.py` | cache: fetch, bucket per local hour, totals per day / month / year |
 | `forecast.py` | VRM forecasts (`/stats?type=forecast`, Wh): solar, consumption, EV charger per local hour, fetched hourly, 62 days back and 7 ahead, in `.storage/victron_vrm.<entry_id>.forecast` |
 | `coordinator.py`, `sensor.py` | 15-minute refresh of yesterday + today (forecasts at most hourly), last-sync sensor, forecast sensors (solar today / remaining today / tomorrow, consumption today / tomorrow; hours as attribute, `accuracy` = actual ÷ forecast production over the last 14 days) |
-| `websocket.py` | card API: `victron_vrm/info`, `years`, `days`, `hours`, `finance` |
+| `websocket.py` | card API: `victron_vrm/info`, `years`, `days`, `hours`, `finance`, `panel` |
 | `summary.py`, `__init__.py`, `services.yaml` | services `summary` (response only; yesterday's day summary adds today's forecast as `forecast` and a last message line) and `resync` |
 | `frontend.py` | registers the card as an inline `data:` Lovelace module and refreshes it on startup |
 | `frontend/victron-vrm-card.js` | the card, one self-contained file; must start with `/* victron-vrm-card` |
@@ -57,7 +57,7 @@ All commands take an optional `entry_id`.
 
 | type | answer |
 |---|---|
-| `victron_vrm/info` | `codes, site, start, synced, backfilling, finance` |
+| `victron_vrm/info` | `codes, site, start, synced, backfilling, finance, panel` |
 | `victron_vrm/years` | `codes, years: {YYYY: {t, m: {MM: totals}, n: {MM: days with data}}}` |
 | `victron_vrm/days` (`start`, `end`) | `codes, days: {YYYY-MM-DD: totals}` |
 | `victron_vrm/hours` (`date`) | `codes, hours: {HH: values}` |
@@ -65,6 +65,7 @@ All commands take an optional `entry_id`.
 | `victron_vrm/flows` (`start`, `end`, `codes`) | `codes, hours: {YYYY-MM-DD: {HH: values in the order of codes}}`, only hours where one of `codes` is non-zero, at most 400 days; the Baterie view asks for the shown month with `[Pb, Gb, Bc, Bg]` |
 | `victron_vrm/forecast` (`start`, `end`) | `codes: [solar, consumption, ev], days: {YYYY-MM-DD: {t, h: {HH: values}}}, fetched`, kWh |
 | `victron_vrm/finance` (admin) | saves the finance options, answers `{finance}` |
+| `victron_vrm/panel` (admin, `panel`: one of `PANEL_COLORS` or null) | saves the boxes' background, answers `{panel}` |
 
 `finance` lives in the config entry options: `investment` (lei), `prices: [{from: "YYYY-MM" | null, import, export}]` (lei/kWh), plus `price_import` / `price_export` mirroring the last price. The handler sorts by `from`, forces the first `from` to null and rejects two prices starting in the same month. Entries saved before price history have only the two plain fields; the card's `priceList()` turns them into one period.
 
@@ -110,7 +111,7 @@ In the Claude desktop app, point `.claude/launch.json` at that command and use `
 
 ## Design rules already settled
 
-- Dark palette with measured contrast on the panel `#1f1f1f`: text `#fff`, soft `#c7c7c7`, muted `#a3a3a3` (6.5:1), control borders `#6b6b6b` (3.1:1), focus `#5aa0f0`, primary button `#2f72d0` with white text (4.7:1).
+- The card's own page is transparent (the theme background shows); the boxes (`.box`) use `--vrm-panel`, chosen in Setări from `PANELS` (`#1f1f1f`, `#2e2e2e`, `#3c3c3c` default, `#464646`; the same list is `PANEL_COLORS` in `const.py`), saved in the entry options (`panel`) for every device and cached in `localStorage` so a page does not flash. Contrast is measured on the lightest box `#464646`: text `#fff`, soft `#c7c7c7`, muted `#b5b5b5` (4.5:1), control borders `#939393` (3:1), focus `#5aa0f0`, primary button `#2f72d0` with white text (4.7:1). A lighter box colour needs these rechecked.
 - One fixed colour per flow in every chart (`FLOW`); text never in series colours; legends always shown; validate any new chart colour for colour-vision deficiencies.
 - Units are always visible where the number is: in tables under each column name (`th(long, short, unit, cls)`; cells hold bare numbers, percentages without `%`), in KPIs as the small unit beside the value, in chart legends right after each total, and on the chart's y axis (above the top label, `barChart` option `unit`). No separate "kWh · …" or "lei" notes.
 - Font sizes are plain `font-size:Npx` in the CSS; the card rewrites them to follow the per-device size from Setări (`--fz`).

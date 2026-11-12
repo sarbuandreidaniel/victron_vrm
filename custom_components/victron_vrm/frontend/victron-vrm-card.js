@@ -1,9 +1,9 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.14.5';
-// casetele sunt rgb(60,60,60) pe fundalul temei; contrast față de panou: fg 10,5:1 · soft 6,4:1 · muted 4,9:1 (AA) · ctl 3,0:1 (marginea controalelor)
-const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#adadad',
-  ctl: '#858585', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
+const VERSION = '0.15.0';
+// casetele (C.panel = cea implicită din PANELS) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
+const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
+  ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
 // fontul interfeței Home Assistant, cu cifre de lățime egală pentru valori
 const FONT = "var(--ha-font-family-body, Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif)";
 // fiecare flux are aceeași culoare în toate graficele
@@ -39,6 +39,14 @@ const loadFz = () => { try { const v = +localStorage.getItem(FZ_KEY); return FZ.
 const saveFz = (v) => { try { localStorage.setItem(FZ_KEY, String(v)); } catch (e) { /* stocare indisponibilă */ } };
 const FZ_EVENT = 'victron-vrm-fz';
 const FIN_EVENT = 'victron-vrm-finance';
+// culoarea casetelor: aceeași pe toate dispozitivele (opțiunile integrării, victron_vrm/panel),
+// ținută și în localStorage ca pagina să nu clipească la încărcare; lista e și în const.py
+const PANELS = [['Negru', '#1f1f1f'], ['Grafit', '#2e2e2e'], ['Gri', '#3c3c3c'], ['Gri deschis', '#464646']];
+const PANEL_DEF = '#3c3c3c', PANEL_KEY = 'victron-vrm-panel', PANEL_EVENT = 'victron-vrm-panel';
+const okPanel = (v) => (PANELS.some((p) => p[1] === v) ? v : PANEL_DEF);
+let PANEL = null;
+const loadPanel = () => { if (!PANEL) { try { PANEL = okPanel(localStorage.getItem(PANEL_KEY)); } catch (e) { PANEL = PANEL_DEF; } } return PANEL; };
+const savePanel = (v) => { PANEL = v; try { localStorage.setItem(PANEL_KEY, v); } catch (e) { /* stocare indisponibilă */ } };
 const nf = (d) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: d, maximumFractionDigits: d });
 const F0 = nf(0).format, F1 = nf(1).format, F2 = nf(2).format;
 const lei = (v) => (Math.abs(v) >= 1000 ? F0(v) : F2(v));
@@ -286,7 +294,7 @@ const sumK = (rows, k) => rows.reduce((a, r) => a + (isFinite(r[k]) ? r[k] : 0),
 const RAW_CSS = `
 :host{display:block}
 .w{max-width:1404px;margin:0 auto;font-family:${FONT};-webkit-font-smoothing:antialiased;color:${C.fg};border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
-.box{background:${C.panel};border:1px solid ${C.border};border-radius:6px;padding:16px;position:relative}
+.box{background:var(--vrm-panel,${C.panel});border:1px solid ${C.border};border-radius:6px;padding:16px;position:relative}
 .nav{display:flex;align-items:center;gap:8px}
 .nav .t{font-size:24px;font-weight:500;letter-spacing:-.01em;flex:1;min-width:0}
 .nav .bt{display:flex;gap:8px;flex-shrink:0}
@@ -357,6 +365,9 @@ tr.nil td{color:${C.muted}}
 .seg button{background:transparent;color:${C.fg};border:1px solid ${C.ctl};border-radius:6px;min-height:36px;padding:0 14px;font:inherit;font-size:15px;cursor:pointer}
 .seg button:hover{background:rgba(255,255,255,.08)}
 .seg button[aria-pressed="true"]{border-color:${C.sel};background:rgba(57,135,229,.18)}
+.seg button[data-panel]:disabled{cursor:default;opacity:.6}
+.swc{display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.55);vertical-align:-3px;margin-right:8px;box-sizing:border-box}
+.pst:empty{display:none}
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}
 .row .l{font-size:15px}
 .sw{position:relative;width:46px;height:26px;border-radius:13px;border:1px solid ${C.ctl};background:#262626;cursor:pointer;flex-shrink:0;padding:0;transition:background .15s}
@@ -481,6 +492,9 @@ class VictronVrmCard extends HTMLElement {
     // pagina Setări a salvat deja valorile noi; celelalte pagini le recitesc
     this._onFin = () => { this._cache.clear(); if (!this._settings()) this._load(); };
     window.addEventListener(FIN_EVENT, this._onFin);
+    this._applyPanel();
+    this._onPanel = () => this._applyPanel();
+    window.addEventListener(PANEL_EVENT, this._onPanel);
     this._timer = setInterval(() => this._load(true), 5 * 60 * 1000);
     this._load();
   }
@@ -489,6 +503,7 @@ class VictronVrmCard extends HTMLElement {
     window.removeEventListener(FZ_EVENT, this._onFz);
     window.removeEventListener('storage', this._onFz);
     window.removeEventListener(FIN_EVENT, this._onFin);
+    window.removeEventListener(PANEL_EVENT, this._onPanel);
   }
   set hass(h) {
     const first = !this._hass; this._hass = h;
@@ -499,6 +514,14 @@ class VictronVrmCard extends HTMLElement {
   }
   get hass() { return this._hass; }
   _settings() { return this._cfg && this._cfg.view === 'setari'; }
+  _applyPanel() { this.style.setProperty('--vrm-panel', loadPanel()); }
+  // culoarea venită de la integrare; anunță celelalte carduri doar când s-a schimbat
+  _setPanel(v) {
+    v = okPanel(v);
+    if (v === loadPanel()) return this._applyPanel();
+    savePanel(v);
+    window.dispatchEvent(new Event(PANEL_EVENT));
+  }
   _applyFz() {
     const fz = loadFz();
     if (fz === this._fz) return;
@@ -558,6 +581,7 @@ class VictronVrmCard extends HTMLElement {
     if (hit && (!live || Date.now() - hit.at < 5 * 60 * 1000)) return hit.data;
     const data = await this._hass.callWS(this._cfg.entry_id ? { ...msg, entry_id: this._cfg.entry_id } : msg);
     this._cache.set(key, { at: Date.now(), data });
+    if (msg.type === 'victron_vrm/info') this._setPanel(data.panel);
     return data;
   }
   async _load(refresh = false) {
@@ -1385,6 +1409,7 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
  <div class="box"><div class="ttl">Mărime text</div><div class="note">Se aplică tuturor paginilor Energie VRM, doar pe acest dispozitiv</div>
   <div class="seg">${FZ.map(([l, v]) => `<button data-fz="${v}" aria-pressed="${v === fz}">${l}</button>`).join('')}</div>
   <div class="kpi" style="margin-top:14px"><div class="l">Exemplu</div><div class="v">${kwh(18.4)}<span class="u">kWh</span></div><div class="s">Ø ${kwh(15.9)} kWh/zi</div></div></div>
+ ${this._panelBox()}
  <div class="box"><div class="ttl">Notificări</div><div class="note" style="margin:0">Automatizarea ${a.st ? esc(a.st.attributes.friendly_name || a.id) : ''}</div>${notif}</div>
  </div><div class="col">
  ${this._finBox()}
@@ -1396,7 +1421,8 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
   <dt>Versiune card</dt><dd>${VERSION}</dd></dl>` : ''}</div>
 </div></div>`;
     this._wireFin(w);
-    w.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+    this._wirePanel(w);
+    w.querySelectorAll('.seg button[data-fz]').forEach((b) => b.addEventListener('click', () => {
       saveFz(+b.dataset.fz);
       window.dispatchEvent(new Event(FZ_EVENT));
     }));
@@ -1417,6 +1443,32 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
         .finally(() => setTimeout(() => { test.disabled = false; test.textContent = 'Trimite acum'; }, 3000));
     });
     this._autoKey = `${a.st ? a.st.state : ''}|${a.last || ''}`;
+  }
+  _panelBox() {
+    const cur = loadPanel(), admin = !this._hass.user || this._hass.user.is_admin;
+    return `<div class="box"><div class="ttl">Culoarea casetelor</div><div class="note">Aceeași pe toate dispozitivele${admin ? '' : '; o poate schimba doar un administrator'}</div>
+  <div class="seg">${PANELS.map(([l, v]) => `<button data-panel="${v}" aria-pressed="${v === cur}"${admin ? '' : ' disabled'}><i class="swc" style="background:${v}"></i>${l}</button>`).join('')}</div>
+  <div class="note pst" aria-live="polite"></div></div>`;
+  }
+  _wirePanel(w) {
+    const btns = [...w.querySelectorAll('.seg button[data-panel]')], st = w.querySelector('.pst');
+    btns.forEach((b) => b.addEventListener('click', async () => {
+      const v = b.dataset.panel;
+      if (v === loadPanel()) return;
+      btns.forEach((x) => { x.disabled = true; });
+      st.textContent = 'Se salvează…'; st.className = 'note pst';
+      try {
+        const msg = { type: 'victron_vrm/panel', panel: v };
+        const res = await this._hass.callWS(this._cfg.entry_id ? { ...msg, entry_id: this._cfg.entry_id } : msg);
+        this._info = { ...this._info, panel: res.panel };
+        this._cache.clear();
+        this._setPanel(res.panel);
+        btns.forEach((x) => x.setAttribute('aria-pressed', x.dataset.panel === okPanel(res.panel)));
+        st.textContent = '';
+      } catch (e) {
+        st.textContent = `Nu am putut salva: ${e.message || e}`; st.className = 'note pst warn';
+      } finally { btns.forEach((x) => { x.disabled = false; }); }
+    }));
   }
   _finBox() {
     const f = (this._info && this._info.finance) || {}, admin = !this._hass.user || this._hass.user.is_admin;
@@ -1510,6 +1562,7 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
     this._closeFs();
     const host = document.createElement('div');
     host.style.setProperty('--fz', this._fz || 1);
+    host.style.setProperty('--vrm-panel', loadPanel());
     const sr = host.attachShadow({ mode: 'open' });
     sr.innerHTML = `<style>${CSS}</style><div class="fs"><div class="hd"><div><div class="ttl">${c.ttl} · ${esc(this._title())}</div><div class="note">${c.note}</div></div>
       <div class="tools"><button class="tb xb" title="Închide" aria-label="Închide">${svgI(ICON.close)}</button></div></div>${this._legend(c)}<div class="ch"></div></div>`;

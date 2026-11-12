@@ -11,7 +11,7 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CODES, DOMAIN, EV_CODES, FINANCE_KEYS, OPT_FINANCE
+from .const import CODES, DOMAIN, EV_CODES, FINANCE_KEYS, OPT_FINANCE, OPT_PANEL, PANEL_COLORS
 from .forecast import FC_KEYS
 from .history import VrmHistory
 
@@ -52,6 +52,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_flows)
     websocket_api.async_register_command(hass, ws_forecast)
     websocket_api.async_register_command(hass, ws_finance)
+    websocket_api.async_register_command(hass, ws_panel)
 
 
 def _not_loaded(connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
@@ -75,6 +76,7 @@ def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
         "backfilling": h.backfilling,
         "years": sorted(h.data["years"]),
         "finance": entry.options.get(OPT_FINANCE, {}),
+        "panel": entry.options.get(OPT_PANEL),
     })
 
 
@@ -229,3 +231,23 @@ def ws_finance(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
         finance["price_export"] = prices[-1]["export"]
     hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_FINANCE: finance})
     connection.send_result(msg["id"], {"finance": finance})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/panel",
+        vol.Optional("entry_id"): str,
+        vol.Required("panel"): vol.Any(None, vol.In(PANEL_COLORS)),
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_panel(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Save the background colour of the card's boxes (None = the card's default)."""
+    if (entry := _entry(hass, msg)) is None:
+        return _not_loaded(connection, msg)
+    options = {k: v for k, v in entry.options.items() if k != OPT_PANEL}
+    if msg["panel"] is not None:
+        options[OPT_PANEL] = msg["panel"]
+    hass.config_entries.async_update_entry(entry, options=options)
+    connection.send_result(msg["id"], {"panel": msg["panel"]})

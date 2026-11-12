@@ -12,7 +12,7 @@
   The data is generated below by a small deterministic model (7 kW solar, 20 kWh battery, EV charger
   from 2026-10-12 on); it is not real installation data. The fake `hass.callWS` answers the same
   commands, in the same shapes, as websocket.py. In the console: `el` is the card, `hassFake` the fake
-  hass (`hassFake.fin` = saved finance options, `hassFake.calls` = every write).
+  hass (`hassFake.fin` = saved finance options, `hassFake.panel` = saved box colour, `hassFake.calls` = every write).
 -->
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>victron-vrm-card harness</title>
@@ -133,9 +133,10 @@
   const hass = {
     states, calls: [], user: { is_admin: q.get('admin') !== '0' },
     fin: { investment: 80000, price_import: 1.11, price_export: 0.45 },
+    panel: null,
     // aceleași răspunsuri ca websocket.py
     callWS: async (m) => {
-      if (m.type === 'victron_vrm/info') return { codes: CODES, site: 'Instalație demo', start: iso(START), synced: new Date().toISOString(), backfilling: false, finance: hass.fin };
+      if (m.type === 'victron_vrm/info') return { codes: CODES, site: 'Instalație demo', start: iso(START), synced: new Date().toISOString(), backfilling: false, finance: hass.fin, panel: hass.panel };
       if (m.type === 'victron_vrm/years') return { codes: CODES, years };
       if (m.type === 'victron_vrm/days') return { codes: CODES, days: Object.fromEntries(Object.entries(dayT).filter(([k]) => k >= m.start && k <= m.end)) };
       if (m.type === 'victron_vrm/hours') return { codes: CODES, hours: hours[m.date] || {} };
@@ -175,6 +176,7 @@
         }
         return { finance: (hass.fin = f) };
       }
+      if (m.type === 'victron_vrm/panel') { hass.calls.push(m); return { panel: (hass.panel = m.panel) }; }
       throw new Error(`comandă necunoscută: ${m.type}`);
     },
     // schimbă starea entității ca HA, apoi trimite cardului un `hass` nou
