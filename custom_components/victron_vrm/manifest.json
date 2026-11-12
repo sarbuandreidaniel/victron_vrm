@@ -1,6 +1,9 @@
 {
   "domain": "victron_vrm",
   "name": "Victron VRM",
+  "after_dependencies": [
+    "recorder"
+  ],
   "codeowners": [
     "@sarbuandreidaniel"
   ],
@@ -16,5 +19,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/sarbuandreidaniel/victron_vrm/issues",
   "requirements": [],
-  "version": "0.15.1"
+  "version": "0.16.0"
 }

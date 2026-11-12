@@ -62,6 +62,8 @@ Needs `info` (for `finance` and `start`) and `years`. Without an investment or a
 
 ## 4b. Mașina (`_renderEv`)
 
+With `source: gx` (`_gx()`), `_load` asks `victron_vrm/ev_gx` for the meter entity `_gxEntity()` (`energy:` or `_evEnt().total`) and `victron_vrm/ev` in parallel; the first becomes `this._ev`, the second `this._evVrm`, and `_gxCmp(from, to, P)` adds the "Comparație cu VRM" box (days of the month with energy in either source, total and grid kWh, differences hidden on phones). The nav title gets "· contorul stației" and the sessions note names the meter.
+
 Month navigation like Lună (`_range`/`_shift` treat `masina` as a month). Order on the page: nav + summary, the live box (`_liveHtml`, wired by `_wireLive`), four KPIs, `EV_CHARTS` (per day of the month; per hour of the day via `rows: 'hod'` from `this._extra.hod`), the month's sessions (`_sessions()`, memoised per websocket answer) a table of every month with charging and one per year with a total row (a click selects that month, or the year's last month). Live entities come from `_evEnt()`; `set hass` calls `_syncLive()`, which swaps only the `.live` box when `_liveKey()` changes and never while the current stepper has an unsent value (`this._evA`). Service calls: `switch.turn_on/off` (charging, auto start), `select.select_option` (mode), `number.set_value` (current); errors show in `.ev-st`.
 
 ## 4c. Baterie (`_renderBat`)

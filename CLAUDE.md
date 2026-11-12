@@ -14,7 +14,8 @@ Card internals (constants, methods, CSS, recipes) are in [docs/card.md](docs/car
 | `history.py` | cache: fetch, bucket per local hour, totals per day / month / year |
 | `forecast.py` | VRM forecasts (`/stats?type=forecast`, Wh): solar, consumption, EV charger per local hour, fetched hourly, 62 days back and 7 ahead, in `.storage/victron_vrm.<entry_id>.forecast` |
 | `coordinator.py`, `sensor.py` | 15-minute refresh of yesterday + today (forecasts at most hourly), last-sync sensor, forecast sensors (solar today / remaining today / tomorrow, consumption today / tomorrow; hours as attribute, `accuracy` = actual ÷ forecast production over the last 14 days) |
-| `websocket.py` | card API: `victron_vrm/info`, `years`, `days`, `hours`, `finance`, `panel` |
+| `websocket.py` | card API: `victron_vrm/info`, `years`, `days`, `hours`, `ev`, `ev_gx`, `flows`, `forecast`, `finance`, `panel` |
+| `ev_gx.py` | EV energy from the charger's own meter (HA statistics), split by source with VRM's hourly flows |
 | `summary.py`, `__init__.py`, `services.yaml` | services `summary` (response only; yesterday's day summary adds today's forecast as `forecast` and a last message line) and `resync` |
 | `frontend.py` | registers the card as an inline `data:` Lovelace module and refreshes it on startup |
 | `frontend/victron-vrm-card.js` | the card, one self-contained file; must start with `/* victron-vrm-card` |
@@ -62,6 +63,7 @@ All commands take an optional `entry_id`.
 | `victron_vrm/days` (`start`, `end`) | `codes, days: {YYYY-MM-DD: totals}` |
 | `victron_vrm/hours` (`date`) | `codes, hours: {HH: values}` |
 | `victron_vrm/ev` (`start`, `end`) | `codes: [Pe, Be, Ge], hours: {YYYY-MM-DD: {HH: [Pe, Be, Ge]}}`, only hours with EV energy; the Mașina view asks for the whole history once |
+| `victron_vrm/ev_gx` (`start`, `end`, `entity`) | like `ev`, plus `entity`, `first` (first local hour of the meter's statistics, `YYYY-MM-DDTHH`, or null) and `pending` (kWh in hours VRM has not synced yet, booked on the grid); see "EV energy from the charger's meter" |
 | `victron_vrm/flows` (`start`, `end`, `codes`) | `codes, hours: {YYYY-MM-DD: {HH: values in the order of codes}}`, only hours where one of `codes` is non-zero, at most 400 days; the Baterie view asks for the shown month with `[Pb, Gb, Bc, Bg]` |
 | `victron_vrm/forecast` (`start`, `end`) | `codes: [solar, consumption, ev], days: {YYYY-MM-DD: {t, h: {HH: values}}}, fetched`, kWh |
 | `victron_vrm/finance` (admin) | saves the finance options, answers `{finance}` |
@@ -104,6 +106,10 @@ In the Claude desktop app, point `.claude/launch.json` at that command and use `
 ## Mașina view (EV charger)
 
 `view: masina` with `charger: <prefix>` (Victron EVCS entities from the core `victron_gx` integration: `sensor.<prefix>_status`, `_power`, `_current`, `_total_energy`, `_last_session_energy`, `_last_session_time`, `select.<prefix>_mode`, `switch.<prefix>_ev_charging`, `switch.<prefix>_auto_start`, `number.<prefix>_charge_current_setpoint`) and optionally `car: <prefix>` (`sensor.<prefix>_state_of_charge`, `_target_state_of_charge`, `_charging_state`); `entities:` overrides any single id. The live box re-renders only when one of those states changes (`_syncLive`), and the current stepper sends one `number.set_value` 800 ms after the last press. History comes from `victron_vrm/ev`; sessions are runs of consecutive hours with ≥ 0.05 kWh to the car, so their times are whole hours. Cost = grid kWh × that month's import price; savings = (solar + battery) kWh × the same price, matching Amortizare.
+
+### EV energy from the charger's meter (`source: gx`)
+
+VRM is making the EV charger data a paid option, so the Mașina view can also read the charger's own meter: `source: gx` on the card (optional `energy:` = the meter, default `sensor.<charger>_total_energy` from victron_gx, `state_class: total_increasing`). `victron_vrm/ev_gx` reads the meter's hourly `change` from the recorder (plus the 5-minute rows of the hour in progress) and splits each hour's energy as Pe/Be/Ge in the proportions of that hour's VRM consumption Pc/Bc/Gc (the charger is on AC out, so its energy is part of that consumption). Hours before the meter's first statistics row keep VRM's own Pe/Be/Ge from the cache; an hour VRM has not synced yet goes to the grid and into `pending`. With `source: gx` the view also shows "Comparație cu VRM" (per day of the month: total and grid kWh from both). Checked on real data, November 2026 to the 11th: total 104.32 (VRM) vs 104.12 kWh (meter), grid 86.04 vs 85.09 kWh; the solar/battery split differs more on single days (6 Nov: solar 4.47 vs 3.45 kWh). `manifest.json` lists `recorder` in `after_dependencies`.
 
 ## Baterie view (home battery)
 

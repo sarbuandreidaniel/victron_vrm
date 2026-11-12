@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.15.1';
+const VERSION = '0.16.0';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -604,9 +604,15 @@ class VictronVrmCard extends HTMLElement {
       if (refresh && !(from <= t && t <= to)) return;
       try {
         const info = await this._ws({ type: 'victron_vrm/info' }, true);
-        const ev = await this._ws({ type: 'victron_vrm/ev', start: info.start, end: iso(t) }, true);
+        const vrm = this._ws({ type: 'victron_vrm/ev', start: info.start, end: iso(t) }, true);
+        let ev, evVrm = null;
+        if (this._gx()) {
+          const entity = this._gxEntity();
+          if (!entity) throw new Error('pentru sursa gx adaugă în configurația cardului charger: sau energy:');
+          [ev, evVrm] = await Promise.all([this._ws({ type: 'victron_vrm/ev_gx', start: info.start, end: iso(t), entity }, true), vrm]);
+        } else ev = await vrm;
         if (seq !== this._seq) return;
-        this._info = info; this._ev = ev; this._err = null;
+        this._info = info; this._ev = ev; this._evVrm = evVrm; this._err = null;
       } catch (e) {
         if (seq !== this._seq) return;
         this._err = e && e.message ? e.message : String(e);
@@ -878,6 +884,9 @@ ${this._foot()}`;
   }
 
   // ── mașina: starea stației, comenzi și istoricul încărcărilor ───────
+  // view: masina cu source: gx — energia din contorul stației (victron_gx), nu din VRM
+  _gx() { return this._cfg && this._cfg.source === 'gx'; }
+  _gxEntity() { return this._cfg.energy || this._evEnt().total || null; }
   _evEnt() {
     const c = this._cfg.charger, car = this._cfg.car, E = {};
     if (c) Object.assign(E, { status: `sensor.${c}_status`, power: `sensor.${c}_power`, current: `sensor.${c}_current`, mode: `select.${c}_mode`,
@@ -994,15 +1003,41 @@ ${this._foot()}`;
     this._sess = { src: this._ev, list };
     return list;
   }
+  // sursa gx: aceeași lună din VRM și din contorul stației, pe zile
+  _gxCmp(from, to, P) {
+    const A = (this._evVrm && this._evVrm.hours) || {}, B = this._ev.hours, ev = this._ev, t = today();
+    const day = (H, ds) => Object.values(H[ds] || {}).reduce((a, v) => [a[0] + v[0] + v[1] + v[2], a[1] + v[2]], [0, 0]);
+    const F = (v) => F2(v), D = (v) => (v > 0.005 ? '+' : v < -0.005 ? '−' : '') + F2(Math.abs(v));
+    const rows = [], tot = [0, 0, 0, 0];
+    for (let d = from; d <= to && d <= t; d = addDays(d, 1)) {
+      const ds = iso(d), [ea, ga] = day(A, ds), [eb, gb] = day(B, ds);
+      if (ea < 0.005 && eb < 0.005) continue;
+      tot[0] += ea; tot[1] += eb; tot[2] += ga; tot[3] += gb;
+      rows.push(`<tr class="go" data-d="${ds}"><td><span class="hn">${esc(cap(`${ZILE[d.getDay()]}, ${d.getDate()} ${LUNI_L[d.getMonth()]}`))}</span><span class="hm">${d.getDate()} ${LUNI[d.getMonth()]}</span></td>`
+        + `<td>${F(ea)}</td><td>${F(eb)}</td><td class="hn">${D(eb - ea)}</td><td>${F(ga)}</td><td>${F(gb)}</td><td class="hn">${D(gb - ga)}</td></tr>`);
+    }
+    const [f, h] = (ev.first || '').split('T');
+    const since = ev.first ? `Contorul stației (<code>${esc(ev.entity || '')}</code>) are statistici din ${esc(f)} ${esc(h)}:00; orele dinainte vin din VRM.` : `Nu există statistici pentru <code>${esc(ev.entity || '')}</code>, deci toate datele vin din VRM.`;
+    const pend = ev.pending > 0.005 ? ` ${F(ev.pending)} kWh din orele pe care VRM nu le-a sincronizat încă sunt socotite deocamdată din rețea.` : '';
+    const sum = rows.length
+      ? `Luna aceasta: VRM <b>${F(tot[0])} kWh</b>, contorul <b>${F(tot[1])} kWh</b> (${D(tot[1] - tot[0])}); din rețea VRM <b>${F(tot[2])} kWh</b>, calculat <b>${F(tot[3])} kWh</b>`
+        + (isFinite(P) ? `, adică un cost de ${lei(tot[2] * P)} față de ${lei(tot[3] * P)} lei.` : '.')
+      : 'Nicio încărcare în luna aceasta.';
+    const head = `<thead><tr><th>Ziua</th>${th('Total VRM', 'VRM', 'kWh')}${th('Total contor', 'Contor', 'kWh')}${th('Diferență', '', 'kWh', 'hn')}${th('Rețea VRM', 'Reț. VRM', 'kWh')}${th('Rețea calculat', 'Reț. calc.', 'kWh')}${th('Diferență', '', 'kWh', 'hn')}</tr></thead>`;
+    const foot = `<tfoot><tr><td>Total</td><td>${F(tot[0])}</td><td>${F(tot[1])}</td><td class="hn">${D(tot[1] - tot[0])}</td><td>${F(tot[2])}</td><td>${F(tot[3])}</td><td class="hn">${D(tot[3] - tot[2])}</td></tr></tfoot>`;
+    return `<h2>Comparație cu VRM<small>apasă pe o zi</small></h2><div class="box"><div class="note">${since}${pend}</div><div class="note">${sum}</div>`
+      + (rows.length ? `<div class="tw"><table>${head}<tbody>${rows.join('')}</tbody>${foot}</table></div>` : '') + '</div>';
+  }
   _renderEv() {
     const w = this.shadowRoot && this.shadowRoot.querySelector('.w'); if (!w || !this._hass) return;
     const t = today(), { from, to } = this._range();
-    const nav = `<div class="box"><div class="nav"><div class="t">${esc(this._title())}</div>
+    const gx = this._gx();
+    const nav = `<div class="box"><div class="nav"><div class="t">${esc(this._title())}${gx ? ` <span style="color:${C.muted};font-size:15px;font-weight:400;white-space:nowrap">· contorul stației</span>` : ''}</div>
       <div class="bt"><button class="prev" aria-label="Luna trecută">‹</button><button class="now">Acum</button>
       <button class="next" aria-label="Luna următoare"${to >= t ? ' disabled' : ''}>›</button></div></div>${this._err ? '' : '<div class="take"></div>'}</div>`;
     const live = this._liveHtml();
     if (this._err || !this._ev) {
-      w.innerHTML = nav + live + (this._err ? `<div class="box msg">Nu am putut citi istoricul VRM: ${esc(this._err)}</div>` : '');
+      w.innerHTML = nav + live + (this._err ? `<div class="box msg">Nu am putut citi istoricul ${gx ? 'stației' : 'VRM'}: ${esc(this._err)}</div>` : '');
       this._wire(w); this._wireLive(w.querySelector('.live')); this._liveK = this._liveKey();
       return;
     }
@@ -1065,10 +1100,11 @@ ${this._foot()}`;
     w.innerHTML = nav + live + `
 <div class="kpis" style="--k:4">${kpi('Energie primită', kwh(ev), 'kWh', n ? `${n} ${n === 1 ? 'sesiune' : 'sesiuni'} · Ø ${kwh(ev / n)} kWh/sesiune` : 'nicio sesiune')}${kpi('Din solar și baterie', ev > 0 ? pctN((sol + bat) / ev) : '—', ev > 0 ? '%' : '', `${kwh(sol)} kWh solar · ${kwh(bat)} kWh baterie`)}${kpi('Din rețea', kwh(grid), 'kWh', isFinite(P) ? `${lei(grid * P)} lei, la ${F2(P)} lei/kWh` : 'completează prețul în Setări')}${kpi('Economie', isFinite(P) ? lei((sol + bat) * P) : '—', 'lei', isFinite(P) ? `doar din rețea ar fi costat ${lei(ev * P)} lei` : '')}</div>
 <div class="charts">${EV_CHARTS.map((c) => this._box(c)).join('')}</div>
-<div class="box"><div class="ttl">Sesiuni de încărcare</div><div class="note">Reconstituite din datele orare VRM, deci pe ore întregi · apasă pe o sesiune pentru ziua respectivă</div>
+<div class="box"><div class="ttl">Sesiuni de încărcare</div><div class="note">${gx ? 'Reconstituite din energia orară a contorului stației, împărțită pe surse după fluxurile VRM ale fiecărei ore' : 'Reconstituite din datele orare VRM'}, deci pe ore întregi · apasă pe o sesiune pentru ziua respectivă</div>
  ${n ? `<div class="tw"><table><thead><tr><th>Ziua</th><th class="hn">Interval</th>${th('Total', 'Tot.', 'kWh')}${srcH}${th('Cost rețea', '', 'lei', 'hn')}</tr></thead><tbody>${srows}</tbody></table></div>` : `<div class="note" style="margin:0">Nicio sesiune în ${per}.</div>`}</div>
 ${mrows ? `<h2>Pe luni<small>apasă pe o lună</small></h2><div class="box"><div class="tw"><table><thead><tr><th>Luna</th>${th('Total', 'Tot.', 'kWh')}${srcH}<th class="hn">Sesiuni</th>${th('Cost rețea', 'Cost', 'lei')}${th('Economie', '', 'lei', 'hn')}</tr></thead><tbody class="evm">${mrows}</tbody></table></div></div>` : ''}
 ${ytable}
+${gx ? this._gxCmp(from, to, price(ym(from))) : ''}
 <div class="foot">Costul folosește prețul energiei din rețea din Setări pentru fiecare lună; energia din solar și baterie e socotită la același preț, ca în Amortizare · ${esc(this._info.site)}</div>`;
     w.querySelector('.take').innerHTML = take;
     this._wire(w);
