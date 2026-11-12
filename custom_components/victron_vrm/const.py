@@ -53,4 +53,4 @@ FINANCE_KEYS = ("investment", "price_import", "price_export")
 # Background of the card's boxes, the same on every device; chosen by an admin in Setări.
 # The card holds the names and the default (#3c3c3c); keep the two lists in step.
 OPT_PANEL = "panel"
-PANEL_COLORS = ("#1f1f1f", "#2e2e2e", "#3c3c3c", "#464646")
+PANEL_COLORS = ("transparent", "#1f1f1f", "#2e2e2e", "#3c3c3c", "#464646")

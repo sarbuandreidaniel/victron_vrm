@@ -1,7 +1,7 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.15.0';
-// casetele (C.panel = cea implicită din PANELS) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
+const VERSION = '0.15.1';
+// casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
 // fontul interfeței Home Assistant, cu cifre de lățime egală pentru valori
@@ -41,7 +41,9 @@ const FZ_EVENT = 'victron-vrm-fz';
 const FIN_EVENT = 'victron-vrm-finance';
 // culoarea casetelor: aceeași pe toate dispozitivele (opțiunile integrării, victron_vrm/panel),
 // ținută și în localStorage ca pagina să nu clipească la încărcare; lista e și în const.py
-const PANELS = [['Negru', '#1f1f1f'], ['Grafit', '#2e2e2e'], ['Gri', '#3c3c3c'], ['Gri deschis', '#464646']];
+const PANELS = [['Transparent', 'transparent'], ['Negru', '#1f1f1f'], ['Grafit', '#2e2e2e'], ['Gri', '#3c3c3c'], ['Gri deschis', '#464646']];
+// fundalul temei, pe care stau casetele transparente și ecranul complet
+const THEME_BG = 'var(--primary-background-color,#111111)';
 const PANEL_DEF = '#3c3c3c', PANEL_KEY = 'victron-vrm-panel', PANEL_EVENT = 'victron-vrm-panel';
 const okPanel = (v) => (PANELS.some((p) => p[1] === v) ? v : PANEL_DEF);
 let PANEL = null;
@@ -248,7 +250,7 @@ function barChart(W, H, rows, o) {
     // linia trece doar prin rândurile cu date (lunile fără istoric rămân goale)
     const pts = rows.map((r, i) => (r.any ? `${ml + i * step + step / 2},${y(r[line])}` : null)).filter(Boolean);
     g += `<polyline points="${pts.join(' ')}" fill="none" stroke="${C.fg}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-    if (rows.length <= 14) rows.forEach((r, i) => { if (r.any) g += `<circle cx="${ml + i * step + step / 2}" cy="${y(r[line])}" r="4" fill="${C.fg}" stroke="${C.panel}" stroke-width="2"/>`; });
+    if (rows.length <= 14) rows.forEach((r, i) => { if (r.any) g += `<circle cx="${ml + i * step + step / 2}" cy="${y(r[line])}" r="4" fill="${C.fg}" style="stroke:var(--vrm-ring,${C.panel})" stroke-width="2"/>`; });
   }
   if (dash) {
     // prognoza, punctată: trece prin toate rândurile care au prognoză, și prin cele fără date reale
@@ -352,7 +354,7 @@ tr.nil td{color:${C.muted}}
 .tb{background:transparent;border:1px solid ${C.ctl};border-radius:6px;width:32px;height:32px;padding:0;color:${C.muted};cursor:pointer;display:grid;place-items:center}
 .tb:hover{color:${C.fg};background:rgba(255,255,255,.08)}
 .tb svg{width:18px;height:18px;fill:currentColor}
-.fs{position:fixed;inset:0;z-index:2147483000;background:var(--primary-background-color,${C.page});color:${C.fg};font-family:${FONT};display:flex;flex-direction:column;box-sizing:border-box;
+.fs{position:fixed;inset:0;z-index:2147483000;background:${THEME_BG};color:${C.fg};font-family:${FONT};display:flex;flex-direction:column;box-sizing:border-box;
   padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
 .fs .ttl{font-size:18px}
 .fs .ch{flex:1 1 auto;min-height:0}
@@ -367,6 +369,7 @@ tr.nil td{color:${C.muted}}
 .seg button[aria-pressed="true"]{border-color:${C.sel};background:rgba(57,135,229,.18)}
 .seg button[data-panel]:disabled{cursor:default;opacity:.6}
 .swc{display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.55);vertical-align:-3px;margin-right:8px;box-sizing:border-box}
+.swc.tr{background:linear-gradient(135deg,transparent 44%,rgba(255,255,255,.55) 44% 56%,transparent 56%)!important}
 .pst:empty{display:none}
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}
 .row .l{font-size:15px}
@@ -514,7 +517,12 @@ class VictronVrmCard extends HTMLElement {
   }
   get hass() { return this._hass; }
   _settings() { return this._cfg && this._cfg.view === 'setari'; }
-  _applyPanel() { this.style.setProperty('--vrm-panel', loadPanel()); }
+  _applyPanel() {
+    const p = loadPanel();
+    this.style.setProperty('--vrm-panel', p);
+    // inelul din jurul punctelor de pe linii are culoarea fundalului de sub grafic
+    this.style.setProperty('--vrm-ring', p === 'transparent' ? THEME_BG : p);
+  }
   // culoarea venită de la integrare; anunță celelalte carduri doar când s-a schimbat
   _setPanel(v) {
     v = okPanel(v);
@@ -1447,7 +1455,7 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
   _panelBox() {
     const cur = loadPanel(), admin = !this._hass.user || this._hass.user.is_admin;
     return `<div class="box"><div class="ttl">Culoarea casetelor</div><div class="note">Aceeași pe toate dispozitivele${admin ? '' : '; o poate schimba doar un administrator'}</div>
-  <div class="seg">${PANELS.map(([l, v]) => `<button data-panel="${v}" aria-pressed="${v === cur}"${admin ? '' : ' disabled'}><i class="swc" style="background:${v}"></i>${l}</button>`).join('')}</div>
+  <div class="seg">${PANELS.map(([l, v]) => `<button data-panel="${v}" aria-pressed="${v === cur}"${admin ? '' : ' disabled'}><i class="swc${v === 'transparent' ? ' tr' : ''}" style="background:${v}"></i>${l}</button>`).join('')}</div>
   <div class="note pst" aria-live="polite"></div></div>`;
   }
   _wirePanel(w) {
@@ -1563,6 +1571,7 @@ ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite
     const host = document.createElement('div');
     host.style.setProperty('--fz', this._fz || 1);
     host.style.setProperty('--vrm-panel', loadPanel());
+    host.style.setProperty('--vrm-ring', THEME_BG);
     const sr = host.attachShadow({ mode: 'open' });
     sr.innerHTML = `<style>${CSS}</style><div class="fs"><div class="hd"><div><div class="ttl">${c.ttl} · ${esc(this._title())}</div><div class="note">${c.note}</div></div>
       <div class="tools"><button class="tb xb" title="Închide" aria-label="Închide">${svgI(ICON.close)}</button></div></div>${this._legend(c)}<div class="ch"></div></div>`;
