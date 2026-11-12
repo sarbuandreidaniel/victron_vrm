@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 import voluptuous as vol
@@ -11,7 +11,6 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
-from homeassistant.util import dt as dt_util
 
 from . import ev_gx
 from .const import CODES, DOMAIN, EV_CODES, FINANCE_KEYS, OPT_FINANCE, OPT_PANEL, PANEL_COLORS
@@ -155,43 +154,39 @@ def ws_ev(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: 
         vol.Required("type"): f"{DOMAIN}/ev_gx",
         vol.Required("start"): _parse,
         vol.Required("end"): _parse,
-        vol.Required("entity"): cv.entity_id,
+        vol.Optional("entity"): cv.entity_id,
         vol.Optional("entry_id"): str,
     }
 )
 @websocket_api.async_response
 async def ws_ev_gx(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """Like `ev`, but the energy comes from the charger's meter statistics (victron_gx).
+    """Like `ev`, but the energy comes from the charger's own meter (victron_gx).
 
-    The meter's hourly energy is split by source with VRM's flows of that hour; hours
-    before the meter's first statistics row keep VRM's EV flows (see ev_gx.py).
+    The meter's hourly energy is read from the integration's copy (`EvMeter`, kept
+    even if the sensor goes away) plus the hour in progress, and split by source
+    with VRM's flows of that hour; hours before the meter's first hour keep VRM's
+    EV flows (see ev_gx.py).
     """
-    if (h := _history(hass, msg)) is None:
+    if (entry := _entry(hass, msg)) is None:
         return _not_loaded(connection, msg)
-    start, end, entity = msg["start"], msg["end"], msg["entity"]
+    start, end = msg["start"], msg["end"]
     if end < start or (end - start).days > MAX_EV_DAYS:
         connection.send_error(msg["id"], "invalid_range", f"Range must be 0–{MAX_EV_DAYS} days")
         return
-    # imported here: recorder is an after-dependency, not needed by the rest of the integration
-    from homeassistant.components.recorder import get_instance
-    from homeassistant.components.recorder.statistics import statistics_during_period
-
-    t0 = dt_util.start_of_local_day(start)
-    t1 = min(dt_util.start_of_local_day(end + timedelta(days=1)), dt_util.now())
-    rec = get_instance(hass)
-    rows = (await rec.async_add_executor_job(
-        statistics_during_period, hass, t0, t1, {entity}, "hour", None, {"change"}
-    )).get(entity, [])
-    # the hour in progress is not in the hourly table yet: add its 5-minute rows
-    last = max((ev_gx._start(r, dt_util.get_default_time_zone()) for r in rows), default=None)
-    since = last + timedelta(hours=1) if last else max(t0, t1 - timedelta(hours=2))
-    if since < t1:
-        rows = [*rows, *(await rec.async_add_executor_job(
-            statistics_during_period, hass, since, t1, {entity}, "5minute", None, {"change"}
-        )).get(entity, [])]
-    meter, first = ev_gx.local_hours(rows, dt_util.get_default_time_zone())
-    out = ev_gx.split(lambda d: (h._day(d) or {}).get("h"), start, end, meter, first)
-    connection.send_result(msg["id"], {"codes": EV_CODES, "entity": entity, **out})
+    h: VrmHistory = entry.runtime_data.history
+    meter: ev_gx.EvMeter = entry.runtime_data.ev_meter
+    if msg.get("entity") and not meter.entity():
+        # no victron_gx charger found: use the meter the card names
+        meter.remember(msg["entity"])
+        await meter.async_sync()
+    hours = await meter.async_live()
+    out = ev_gx.split(lambda d: (h._day(d) or {}).get("h"), start, end, hours, meter.data.get("first"))
+    connection.send_result(msg["id"], {
+        "codes": EV_CODES,
+        "entity": meter.entity(),
+        "synced": meter.data.get("synced"),
+        **out,
+    })
 
 
 @websocket_api.websocket_command(

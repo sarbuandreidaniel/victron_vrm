@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"))
 
 from victron_vrm.const import CODES  # noqa: E402
-from victron_vrm.ev_gx import local_hours, split  # noqa: E402
+from victron_vrm.ev_gx import local_hours, merge, split  # noqa: E402
 
 TZ = ZoneInfo("Europe/Bucharest")
 
@@ -72,7 +72,37 @@ def test_split():
     assert out["hours"]["2026-10-13"] == {"02": [9, 9, 9]}
 
 
+def test_merge_keeps_hours_without_rows():
+    data: dict = {}
+    rows = [
+        {"start": ts(2026, 10, 12, 22), "change": 0.0},
+        {"start": ts(2026, 10, 13, 8), "change": 6.4},
+        {"start": ts(2026, 10, 13, 9), "change": 7.2},
+    ]
+    assert merge(data, rows, TZ, "sensor.a_total_energy") == 2
+    assert data["hours"] == {"2026-10-13": {"08": 6.4, "09": 7.2}}
+    assert data["first"] == "2026-10-12T22"
+    assert data["upto"] == datetime(2026, 10, 13, 10, tzinfo=TZ).astimezone(ZoneInfo("UTC")).isoformat()
+
+    # the same rows again change nothing; a corrected row is rewritten, a zero row removes its hour
+    assert merge(data, rows, TZ, "sensor.a_total_energy") == 0
+    assert merge(data, [{"start": ts(2026, 10, 13, 9), "change": 0.0}], TZ, "sensor.a_total_energy") == 1
+    assert data["hours"] == {"2026-10-13": {"08": 6.4}}
+
+    # the sensor and its statistics are gone, a new one starts later: old hours stay,
+    # `first` and `upto` never move back, both entities are remembered
+    rows_b = [{"start": ts(2026, 11, 1, 14), "change": 0.0}, {"start": ts(2026, 11, 1, 15), "change": 5.0}]
+    merge(data, rows_b, TZ, "sensor.b_total_energy")
+    assert data["hours"] == {"2026-10-13": {"08": 6.4}, "2026-11-01": {"15": 5.0}}
+    assert data["first"] == "2026-10-12T22"
+    assert data["entities"] == ["sensor.a_total_energy", "sensor.b_total_energy"]
+    assert data["entity"] == "sensor.b_total_energy"
+    merge(data, [{"start": ts(2026, 10, 20, 1), "change": 1.0}], TZ, "sensor.b_total_energy")
+    assert data["upto"] == datetime(2026, 11, 1, 16, tzinfo=TZ).astimezone(ZoneInfo("UTC")).isoformat()
+
+
 if __name__ == "__main__":
     test_local_hours()
     test_split()
+    test_merge_keeps_hours_without_rows()
     print("ok")

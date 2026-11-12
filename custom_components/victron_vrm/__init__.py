@@ -28,6 +28,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .coordinator import VrmCoordinator
+from .ev_gx import EvMeter
 from .forecast import VrmForecast
 from .frontend import async_register_card, async_unregister_card
 from .history import VrmHistory
@@ -118,8 +119,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> bool:
     await history.async_load()
     forecast = VrmForecast(hass, entry.entry_id, api, int(entry.data[CONF_SITE_ID]))
     await forecast.async_load()
+    ev_meter = EvMeter(hass, entry.entry_id, history.start)
+    await ev_meter.async_load()
 
-    coordinator = VrmCoordinator(hass, entry, history, forecast)
+    coordinator = VrmCoordinator(hass, entry, history, forecast, ev_meter)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
 
@@ -135,8 +138,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> bool
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> None:
-    """Delete the cached history and forecasts together with the entry."""
-    await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}").async_remove()
-    await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.forecast").async_remove()
+    """Delete the cached history, forecasts and EV meter copy together with the entry."""
+    for suffix in ("", ".forecast", ".ev_meter"):
+        await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}{suffix}").async_remove()
     if not hass.config_entries.async_entries(DOMAIN):
         await async_unregister_card(hass)

@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.16.1';
+const VERSION = '0.17.0';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -1017,7 +1017,7 @@ ${this._foot()}`;
         + `<td>${F(ea)}</td><td>${F(eb)}</td><td class="hn">${D(eb - ea)}</td><td>${F(ga)}</td><td>${F(gb)}</td><td class="hn">${D(gb - ga)}</td></tr>`);
     }
     const [f, h] = (ev.first || '').split('T');
-    const since = ev.first ? `Contorul stației (<code>${esc(ev.entity || '')}</code>) are statistici din ${esc(f)} ${esc(h)}:00; orele dinainte vin din VRM.` : `Nu există statistici pentru <code>${esc(ev.entity || '')}</code>, deci toate datele vin din VRM.`;
+    const since = ev.first ? `Energia orară a contorului stației (<code>${esc(ev.entity || '—')}</code>) e păstrată în integrare din ${esc(f)} ${esc(h)}:00, chiar dacă senzorul dispare; orele dinainte vin din VRM.` : `Integrarea nu are încă date de la contorul stației${ev.entity ? ` (<code>${esc(ev.entity)}</code>)` : ''}, deci toate datele vin din VRM.`;
     const pend = ev.pending > 0.005 ? ` ${F(ev.pending)} kWh din orele pe care VRM nu le-a sincronizat încă sunt socotite deocamdată din rețea.` : '';
     const sum = rows.length
       ? `Luna aceasta: VRM <b>${F(tot[0])} kWh</b>, contorul <b>${F(tot[1])} kWh</b> (${D(tot[1] - tot[0])}); din rețea VRM <b>${F(tot[2])} kWh</b>, calculat <b>${F(tot[3])} kWh</b>`

@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import VrmAuthError, VrmError
 from .const import DOMAIN, UPDATE_INTERVAL
+from .ev_gx import EvMeter
 from .forecast import VrmForecast
 from .history import VrmHistory
 
@@ -27,6 +28,7 @@ class VrmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         entry: ConfigEntry,
         history: VrmHistory,
         forecast: VrmForecast,
+        ev_meter: EvMeter,
     ) -> None:
         super().__init__(
             hass,
@@ -37,6 +39,7 @@ class VrmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.history = history
         self.forecast = forecast
+        self.ev_meter = ev_meter
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -50,6 +53,10 @@ class VrmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except VrmError as err:
             # the history is fine without forecasts; the next update tries again
             _LOGGER.warning("Cannot read the VRM forecast: %s", err)
+        try:
+            await self.ev_meter.async_sync()
+        except Exception:  # noqa: BLE001 - the VRM data must not depend on the recorder
+            _LOGGER.exception("Cannot copy the EV charger meter statistics")
         return {"synced": self.history.synced, "today": self.history.today()}
 
     async def async_run_backfill(self) -> None:
