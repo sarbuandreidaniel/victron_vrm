@@ -80,6 +80,8 @@ Romanian prosumer billing, compensated per month: each imported kWh costs P − 
 - bill without = consumption·P
 - gain = bill without − bill with = max(0, Pc + Bc − Gb)·P + injection·PI (shown as "economii din autoconsum" + "valoarea injecției")
 
+Since the compensation is monthly, the bill with the system always comes out as import·P − injection·PI, so it is linear: the period views (Zi / Săptămână / Lună / An) split it per hour, day or month with `cash()` and the parts add up exactly to the month (October 2026 on Lună gives the same 848.16 / 397.84 / 450.33). An hour or day whose grid import went into the battery shows a negative gain; it comes back when that energy is used.
+
 Each month uses its own price (`priceAt(list, 'YYYY-MM')`); changing a price never rewrites past months. Forward figures (lei/day, time left, estimated month, yearly return) use the last 12 complete months recomputed at the current price (`gainAt`). With one price, a change elsewhere must leave all Amortizare figures unchanged; check that.
 
 Worked example (P 1.11, PI 0.45): import 376 kWh, injection 43 kWh, consumption 764 kWh → bill without 848.16, bill with 43·0.66 + 333·1.11 = 397.84, gain 450.33 lei. A summer month with import 17, injection 623 → bill −261.30 (credit).
