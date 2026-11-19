@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.21.1';
+const VERSION = '0.21.2';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -278,15 +278,16 @@ function invLedWin(x, y, w, h, s, leds, u) {
   return `<defs>${d}</defs>${o}`;
 }
 // partea din mijloc a unui MultiPlus-II (banda portocalie, eticheta, fereastra LED), după fotografia aparatului;
-// coordonatele sunt cele ale aparatului întreg (460 × 900), din care se vede fâșia y 352–614; ph = faza, scrisă deasupra benzii
+// coordonatele sunt cele ale aparatului întreg (460 × 900), din care se vede fâșia y 352–682; ph = faza, scrisă deasupra benzii;
+// fereastra LED e de ~1,8 ori mai mare decât pe aparat, ca textul să se poată citi
 function invDevice(m, leds, ph, u) {
   const spec = isFinite(m.v) && isFinite(m.va) ? `<text x="30" y="479" fill="#fff" font-size="11" font-weight="700">${m.v}<tspan font-size="5" dy="-1">V</tspan><tspan dy="1"> | ${kva(m.va)}</tspan><tspan font-size="5" dy="-1">VA</tspan>`
     + `${isFinite(m.a) ? `<tspan dy="1"> | ${m.a}</tspan><tspan font-size="5" dy="-1">A</tspan>` : ''}</text>` : '';
   const ac = isFinite(m.tr) ? `<text x="30" y="490" fill="#eef7fc" font-size="5.4">AC transfer capacity: ${m.tr}A  |  Inverter 230V</text>` : '';
-  return `<svg viewBox="8 352 444 262" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(m.name)}${ph ? ' ' + ph : ''}" font-family="${DEV_FONT}">
+  return `<svg viewBox="8 352 444 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(m.name)}${ph ? ' ' + ph : ''}" font-family="${DEV_FONT}">
 <defs><linearGradient id="bo${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d9bd6"/><stop offset=".55" stop-color="#0397d5"/><stop offset="1" stop-color="#028fcb"/></linearGradient></defs>
-<rect x="8" y="352" width="444" height="262" rx="8" fill="url(#bo${u})"/>
-<rect x="8" y="360" width="3" height="246" fill="#0679b8" opacity=".55"/><rect x="449" y="360" width="3" height="246" fill="#0679b8" opacity=".55"/>
+<rect x="8" y="352" width="444" height="330" rx="8" fill="url(#bo${u})"/>
+<rect x="8" y="360" width="3" height="314" fill="#0679b8" opacity=".55"/><rect x="449" y="360" width="3" height="314" fill="#0679b8" opacity=".55"/>
 <rect x="19" y="411" width="419" height="23" fill="#f25f45"/>
 <text x="432" y="426.5" text-anchor="end" fill="#fff3ee" font-size="6.5" font-family="Helvetica,Arial,sans-serif">www.victronenergy.com</text>
 <line x1="19" y1="440" x2="438" y2="440" stroke="#bfe3f6" stroke-width=".8"/>
@@ -294,8 +295,8 @@ function invDevice(m, leds, ph, u) {
 <g transform="translate(401 456)"><rect width="23" height="23" fill="#fff"/><path d="M2 2h7v7H2zM14 2h7v7h-7zM2 14h7v7H2zM12 12h3v3h-3zM16 16h5v5h-5zM14 19h2v2h-2zM11 5h2v2h-2z" fill="#111"/></g>
 <line x1="19" y1="496" x2="438" y2="496" stroke="#bfe3f6" stroke-width=".8"/>
 <text x="432" y="510" text-anchor="end" fill="#f2f9fd" font-size="8" font-family="Helvetica,Arial,sans-serif">⚠  ▣  CE  ♺  IP21</text>
-${invLedWin(42, 526, 159, 75, 1.1, leds, u)}
-<g stroke="#eef7fc" stroke-width=".9" fill="none" opacity=".9"><rect x="332" y="530" width="30" height="46"/><path d="M318 540h14M362 534h16M362 548h16M347 524v6M347 576v14M336 590h22v9h-22z"/>
+${invLedWin(24, 518, 290, 140, 2, leds, u)}
+<g stroke="#eef7fc" stroke-width=".9" fill="none" opacity=".9" transform="translate(30 24)"><rect x="332" y="530" width="30" height="46"/><path d="M318 540h14M362 534h16M362 548h16M347 524v6M347 576v14M336 590h22v9h-22z"/>
 <rect x="339" y="537" width="16" height="12"/><path d="M339 556 L355 570 M339 570 L355 556"/></g>
 ${ph ? `<rect x="30" y="362" width="84" height="38" rx="7" fill="${FX.bg}" stroke="${FX.edge}" stroke-width="2.5"/><text x="72" y="389" text-anchor="middle" fill="#fff" font-size="23" font-weight="500" font-family="Roboto,Helvetica,sans-serif">${ph}</text>` : ''}
 </svg>`;
@@ -635,9 +636,9 @@ button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
 .inv [data-e]{cursor:pointer}
 .inv [data-e]:focus-visible{outline:2px solid ${C.focus};outline-offset:2px;border-radius:4px}
 .inote{font-size:12px;color:${C.muted};line-height:1.45}
-@container inv (max-width:760px){.inv-g{gap:8px}.inv-c .ifx{padding:10px 8px}.iph .tp span{display:none}.ifl{flex-direction:column;align-items:flex-start;gap:4px}
-.ifl .r{text-align:left}.ifl .ar{display:none}.ikv{flex-direction:column;gap:0;font-size:12px}.imd{font-size:16px}.inv-s{grid-template-columns:1fr 1fr}
+@container inv (max-width:760px){.inv-g{grid-template-columns:1fr;gap:16px}.inv-s{grid-template-columns:1fr 1fr}
 .inv .hd{flex-wrap:wrap}.ipill{max-width:100%;white-space:normal}}
+@container inv (max-width:360px){.iph .tp{flex-direction:column;gap:2px}}
 @media (max-width:700px){
 .sum{grid-template-columns:1fr auto;gap:0 12px}
 .sum .r{grid-column:1/-1;margin:2px 0 16px}.sum .r:last-child{margin-bottom:0}
