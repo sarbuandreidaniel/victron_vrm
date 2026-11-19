@@ -36,7 +36,7 @@ File: `custom_components/victron_vrm/frontend/victron-vrm-card.js`. Data model, 
 | `parseNum(v)`, `numS(n)` | parse Romanian / plain decimals; format with ≥ 2 decimals |
 | `CHARTS`, `PAY_CHARTS`, `EV_CHARTS` | chart definitions (below) |
 | `EVCS_ST`, `CAR_ST`, `EV_MODES`, `EV_MODE_NOTE`, `dur` | charger / car states in Romanian, charger modes, minutes as text |
-| `FX`, `INV_ST`, `INV_MODE`, `INV_ALARMS`, `INV_LED_C`, `DEV_FONT`, `kva`, `sgnW`, `invLeds`, `invLedWin`, `invDevice` | Invertor view: the Flux palette, VE.Bus state / mode / alarm labels, LED colours, the device font, `8000 → 8k`, signed watts with a real minus, the derived LEDs and the device SVG (viewBox 460 × 900, ids suffixed per unit) |
+| `FX`, `INV_ST`, `INV_MODE`, `INV_ALARMS`, `INV_LED_C`, `DEV_FONT`, `kva`, `sgnW`, `invLeds`, `invLedWin`, `invDevice` | Invertor view: the Flux palette, VE.Bus state / mode / alarm labels, LED colours, the device font, `8000 → 8k`, signed watts with a real minus, the derived LEDs and the device SVG (the middle strip of the front, viewBox `8 352 444 262` in the coordinates of the whole 460 × 900 device, ids suffixed per unit) |
 | `BAT_DEF`, `ESS_MODES`, `ESS_NOTE`, `BAT_LIMS`, `BAT_NAMES`, `BAT_CODES`, `BAT_CHARTS`, `isDur`, `MONTH_V` | Baterie view: default entities, ESS modes, limits, chart definitions; `MONTH_V` = views navigated by month |
 | `rangeChart(W, H, rows, o)` | SVG min–max bars with a mean tick (SoC per day, 0–100 %), same `.hit` / `.hl` hover zones as `barChart` |
 | `barChart(W, H, rows, o)` | SVG stacked bars, up and down, optional line, optional dashed forecast line (`dash`: row field) |

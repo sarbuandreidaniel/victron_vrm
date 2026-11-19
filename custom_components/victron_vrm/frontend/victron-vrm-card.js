@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.21.0';
+const VERSION = '0.21.1';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -277,26 +277,16 @@ function invLedWin(x, y, w, h, s, leds, u) {
   const d = ['g', 'a', 'r'].map((c) => `<radialGradient id="ig${c}${u}"><stop offset="0" stop-color="${INV_LED_C[c]}" stop-opacity=".75"/><stop offset="1" stop-color="${INV_LED_C[c]}" stop-opacity="0"/></radialGradient>`).join('');
   return `<defs>${d}</defs>${o}`;
 }
-// aparatul întreg, după fotografia unui MultiPlus-II (viewBox 460 × 900); m = modelul, ph = faza scrisă pe capac
+// partea din mijloc a unui MultiPlus-II (banda portocalie, eticheta, fereastra LED), după fotografia aparatului;
+// coordonatele sunt cele ale aparatului întreg (460 × 900), din care se vede fâșia y 352–614; ph = faza, scrisă deasupra benzii
 function invDevice(m, leds, ph, u) {
   const spec = isFinite(m.v) && isFinite(m.va) ? `<text x="30" y="479" fill="#fff" font-size="11" font-weight="700">${m.v}<tspan font-size="5" dy="-1">V</tspan><tspan dy="1"> | ${kva(m.va)}</tspan><tspan font-size="5" dy="-1">VA</tspan>`
     + `${isFinite(m.a) ? `<tspan dy="1"> | ${m.a}</tspan><tspan font-size="5" dy="-1">A</tspan>` : ''}</text>` : '';
   const ac = isFinite(m.tr) ? `<text x="30" y="490" fill="#eef7fc" font-size="5.4">AC transfer capacity: ${m.tr}A  |  Inverter 230V</text>` : '';
-  const corner = (x, side, y0, y1) => `<path d="M${x} ${y0 + 4} q0 -4 4 -4 H${x + 61} q4 0 4 4 V${y1 - 8} q0 8 -8 8 H${x + 8} q-8 0 -8 -8z" fill="url(#co${u})"/>`
-    + `<path d="M${x + 4} ${y0 + 1} H${x + 61}" stroke="#55585b" stroke-width="1.5"/><path d="M${side ? x + 3 : x + 62} ${y0 + 4} V${y1 - 2}" stroke="#1a1b1c" stroke-width="2"/>`;
-  return `<svg viewBox="0 0 460 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(m.name)}${ph ? ' ' + ph : ''}" font-family="${DEV_FONT}">
-<defs><linearGradient id="bo${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3aa3da"/><stop offset=".22" stop-color="#1d9bd6"/><stop offset=".6" stop-color="#0397d5"/><stop offset="1" stop-color="#028fcb"/></linearGradient>
-<linearGradient id="ca${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#46484b"/><stop offset="1" stop-color="#2b2d30"/></linearGradient>
-<linearGradient id="cv${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3c3f42"/><stop offset="1" stop-color="#323436"/></linearGradient>
-<linearGradient id="co${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#36383a"/><stop offset="1" stop-color="#25272a"/></linearGradient></defs>
-<path d="M8 16 q0 -4 4 -4 H448 q4 0 4 4 V782 H8z" fill="url(#bo${u})"/>
-<rect x="8" y="80" width="3" height="700" fill="#0679b8" opacity=".55"/><rect x="449" y="80" width="3" height="700" fill="#0679b8" opacity=".55"/>
-${[261, 468, 722].map((y) => `<rect x="3" y="${y}" width="6" height="12" rx="1.5" fill="#1b1d1f"/><rect x="451" y="${y}" width="6" height="12" rx="1.5" fill="#1b1d1f"/>`).join('')}
-${[[1, 0], [391, 1]].map(([x, r]) => `<rect x="${x}" y="2" width="68" height="75" rx="6" fill="url(#ca${u})"/><rect x="${x + 6}" y="8" width="56" height="62" rx="3" fill="#2c2e31"/>`
-    + `<path d="M${x + 5} 3.5 H${x + 63}" stroke="#6a6d70" stroke-width="1.4"/><path d="M${r ? x + 2 : x + 66} 8 V72" stroke="#1d1e20" stroke-width="2"/>`).join('')}
-<g transform="translate(30 118)" fill="#fff" font-family="Helvetica,Arial,sans-serif"><circle cx="12" cy="10" r="11" fill="none" stroke="#fff" stroke-width="2"/>
-<path d="M4 10 q4 -7 8 0 t8 0" fill="none" stroke="#fff" stroke-width="1.6"/><text x="29" y="15" font-size="15" font-weight="500">victron energy</text>
-<text x="30" y="24" font-size="5" letter-spacing="2" opacity=".8">BLUE POWER</text></g>
+  return `<svg viewBox="8 352 444 262" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(m.name)}${ph ? ' ' + ph : ''}" font-family="${DEV_FONT}">
+<defs><linearGradient id="bo${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d9bd6"/><stop offset=".55" stop-color="#0397d5"/><stop offset="1" stop-color="#028fcb"/></linearGradient></defs>
+<rect x="8" y="352" width="444" height="262" rx="8" fill="url(#bo${u})"/>
+<rect x="8" y="360" width="3" height="246" fill="#0679b8" opacity=".55"/><rect x="449" y="360" width="3" height="246" fill="#0679b8" opacity=".55"/>
 <rect x="19" y="411" width="419" height="23" fill="#f25f45"/>
 <text x="432" y="426.5" text-anchor="end" fill="#fff3ee" font-size="6.5" font-family="Helvetica,Arial,sans-serif">www.victronenergy.com</text>
 <line x1="19" y1="440" x2="438" y2="440" stroke="#bfe3f6" stroke-width=".8"/>
@@ -307,12 +297,7 @@ ${[[1, 0], [391, 1]].map(([x, r]) => `<rect x="${x}" y="2" width="68" height="75
 ${invLedWin(42, 526, 159, 75, 1.1, leds, u)}
 <g stroke="#eef7fc" stroke-width=".9" fill="none" opacity=".9"><rect x="332" y="530" width="30" height="46"/><path d="M318 540h14M362 534h16M362 548h16M347 524v6M347 576v14M336 590h22v9h-22z"/>
 <rect x="339" y="537" width="16" height="12"/><path d="M339 556 L355 570 M339 570 L355 556"/></g>
-<g fill="#e6f4fb" opacity=".7">${[0, 1, 2, 3, 4, 5].map((i) => `<rect x="250" y="${724 + i * 6.5}" width="${i === 5 ? 50 : 181}" height="2.2"/>`).join('')}</g>
-<rect x="8" y="780" width="444" height="2" fill="#05476e"/><rect x="9" y="782" width="442" height="104" fill="url(#cv${u})"/><rect x="9" y="782" width="442" height="1.5" fill="#55595c" opacity=".7"/>
-<rect x="66" y="868" width="328" height="28" fill="#26282a"/>
-${Array.from({ length: 37 }, (_, i) => `<path d="M${70 + i * 8.75} 893 V878 q0 -2.5 2.5 -2.5 h0.6 q2.5 0 2.5 2.5 V893z" fill="#0a0a0a"/>`).join('')}
-<rect x="66" y="893" width="328" height="3" fill="#2a2c2e"/>${corner(1, 0, 820, 898)}${corner(394, 1, 820, 898)}
-${ph ? `<rect x="168" y="20" width="124" height="44" rx="8" fill="${FX.bg}" stroke="${FX.edge}" stroke-width="2.5"/><text x="230" y="51" text-anchor="middle" fill="#fff" font-size="26" font-weight="500" font-family="Roboto,Helvetica,sans-serif">${ph}</text>` : ''}
+${ph ? `<rect x="30" y="362" width="84" height="38" rx="7" fill="${FX.bg}" stroke="${FX.edge}" stroke-width="2.5"/><text x="72" y="389" text-anchor="middle" fill="#fff" font-size="23" font-weight="500" font-family="Roboto,Helvetica,sans-serif">${ph}</text>` : ''}
 </svg>`;
 }
 
@@ -627,8 +612,8 @@ button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
 .ipill.bad{border-color:${FX.red}}.ipill.bad i{background:${FX.red}}
 .inv-g{display:grid;grid-template-columns:repeat(var(--n,3),minmax(0,1fr));gap:18px}
 .inv-c{display:flex;flex-direction:column;gap:10px;min-width:0}
-.inv-dev{width:66%;max-width:200px;margin:0 auto}
-.inv-dev svg{display:block;width:100%;height:auto}
+.inv-dev{width:100%}
+.inv-dev svg{display:block;width:100%;height:auto;border-radius:8px}
 .inv-dev .bk{animation:invbk 1.3s steps(1) infinite}
 @keyframes invbk{50%{opacity:.12}}
 .iph .tp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;color:${FX.title}}
@@ -651,7 +636,7 @@ button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
 .inv [data-e]:focus-visible{outline:2px solid ${C.focus};outline-offset:2px;border-radius:4px}
 .inote{font-size:12px;color:${C.muted};line-height:1.45}
 @container inv (max-width:760px){.inv-g{gap:8px}.inv-c .ifx{padding:10px 8px}.iph .tp span{display:none}.ifl{flex-direction:column;align-items:flex-start;gap:4px}
-.ifl .r{text-align:left}.ifl .ar{display:none}.ikv{flex-direction:column;gap:0;font-size:12px}.imd{font-size:16px}.inv-s{grid-template-columns:1fr 1fr}.inv-dev{width:84%}
+.ifl .r{text-align:left}.ifl .ar{display:none}.ikv{flex-direction:column;gap:0;font-size:12px}.imd{font-size:16px}.inv-s{grid-template-columns:1fr 1fr}
 .inv .hd{flex-wrap:wrap}.ipill{max-width:100%;white-space:normal}}
 @media (max-width:700px){
 .sum{grid-template-columns:1fr auto;gap:0 12px}

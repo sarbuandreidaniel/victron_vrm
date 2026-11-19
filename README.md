@@ -86,7 +86,7 @@ vebus: multiplus_ii_48_8000_110_100_id_276   # opțional: prefixul entităților
 rating: 8000                                 # opțional, VA pe aparat; implicit din numele modelului (48/8000/110-100)
 ```
 
-Câte un MultiPlus pe fază (L1, L2, L3), desenat ca aparatul real, cu LED-urile panoului aprinse ca pe aparat. Sub fiecare: puterea din rețea (sau spre rețea) și spre casă, sarcina față de puterea aparatului, cât ia sau dă bateria prin el, tensiunea, curentul și frecvența. Dedesubt: starea VE.Bus, tensiunea, curentul și puterea bateriei, alarmele (cele 10 ale sistemului), modul, limita de curent la intrare și temperatura. Culorile sunt cele ale ecranului Flux. Integrarea Victron GX nu publică LED-urile, așa că sunt deduse din starea VE.Bus, din alarme (avertizare = clipește, alarmă = aprins) și din tensiunea de intrare. Un clic pe un LED sau pe o valoare deschide senzorul. Doar afișează; nu trimite comenzi.
+Câte un MultiPlus pe fază (L1, L2, L3): partea din mijloc a aparatului real (banda portocalie, eticheta și fereastra cu LED-uri, aprinse ca pe aparat). Sub fiecare: puterea din rețea (sau spre rețea) și spre casă, sarcina față de puterea aparatului, cât ia sau dă bateria prin el, tensiunea, curentul și frecvența. Dedesubt: starea VE.Bus, tensiunea, curentul și puterea bateriei, alarmele (cele 10 ale sistemului), modul, limita de curent la intrare și temperatura. Culorile sunt cele ale ecranului Flux. Integrarea Victron GX nu publică LED-urile, așa că sunt deduse din starea VE.Bus, din alarme (avertizare = clipește, alarmă = aprins) și din tensiunea de intrare. Un clic pe un LED sau pe o valoare deschide senzorul. Doar afișează; nu trimite comenzi.
 
 ### Amortizare
 
