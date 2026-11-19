@@ -1,4 +1,4 @@
-"""Sensors: when the VRM history was last synced, and VRM's forecasts for today and tomorrow."""
+"""Sensors: when the VRM history was last synced, VRM's forecasts for today and tomorrow, today's gain in lei."""
 
 from __future__ import annotations
 
@@ -20,9 +20,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import VrmConfigEntry
-from .const import ACCURACY_DAYS, CONF_SITE_ID, DOMAIN
+from .const import ACCURACY_DAYS, CONF_SITE_ID, DOMAIN, OPT_FINANCE
 from .coordinator import VrmCoordinator
 from .forecast import VrmForecast, accuracy, remaining
+from .money import day_cash, price_at
 
 
 async def async_setup_entry(
@@ -30,7 +31,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        [VrmLastSyncSensor(coordinator, entry)]
+        [VrmLastSyncSensor(coordinator, entry), VrmGainTodaySensor(coordinator, entry)]
         + [VrmForecastSensor(coordinator, entry, d) for d in FORECASTS]
     )
 
@@ -144,3 +145,47 @@ class VrmForecastSensor(CoordinatorEntity[VrmCoordinator], SensorEntity):
             attrs["accuracy"] = None if ratio is None else round(ratio * 100)
             attrs["accuracy_days"] = n
         return attrs
+
+
+class VrmGainTodaySensor(CoordinatorEntity[VrmCoordinator], SensorEntity):
+    """Today's gain against having no system, in lei, at this month's prices from Setări.
+
+    From VRM's hourly history, so it trails reality by up to a refresh (15 minutes) plus
+    VRM's own delay. Unknown until prices are saved in Setări. No state class:
+    the value restarts every day and is not a meter.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "gain_today"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "RON"
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: VrmCoordinator, entry: VrmConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.data[CONF_SITE_ID]}_gain_today"
+        self._attr_device_info = _device(entry)
+
+    def _cash(self) -> tuple[dict[str, float], tuple[float, float]] | None:
+        now = dt_util.now()
+        prices = price_at(self._entry.options.get(OPT_FINANCE, {}), now.strftime("%Y-%m"))
+        if prices is None:
+            return None
+        return day_cash(self.coordinator.history.today(), *prices), prices
+
+    @property
+    def native_value(self) -> float | None:
+        c = self._cash()
+        return None if c is None else round(c[0]["gain"], 2)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        c = self._cash()
+        if c is None:
+            return {}
+        cash, (p_imp, p_exp) = c
+        return {k: round(x, 2) for k, x in cash.items() if k != "gain"} | {
+            "price_import": p_imp,
+            "price_export": p_exp,
+        }

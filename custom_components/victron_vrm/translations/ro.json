@@ -31,6 +31,7 @@
   "entity": {
     "sensor": {
       "last_sync": { "name": "Ultima sincronizare" },
+      "gain_today": { "name": "Câștig azi" },
       "forecast_solar_today": { "name": "Prognoză solar azi" },
       "forecast_solar_remaining": { "name": "Prognoză solar rămas azi" },
       "forecast_solar_tomorrow": { "name": "Prognoză solar mâine" },
