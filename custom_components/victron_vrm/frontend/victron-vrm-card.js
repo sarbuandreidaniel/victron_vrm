@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.18.0';
+const VERSION = '0.18.1';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -67,11 +67,13 @@ const sumRow = (k, n, segs = [], txt = []) => {
   const p = [...segs.map(([x, c, w]) => `<span><i style="background:${c}"></i><b>${tot > 0 ? pct(Math.max(0, x) / tot) : '—'}</b> ${w}</span>`), ...txt.map((x) => `<span>${x}</span>`)];
   return `<div class="k">${k}</div><div class="n">${n}</div><div class="r">${bar}<div class="p">${p.join('')}</div></div>`;
 };
-// un rând de prognoză: valoarea prognozată, bara de progres (plin = real, punctat = ce mai urmează după prognoză)
-const fcRow = (k, f, done, left, pc, pw, lw) => {
-  const a = f > 0 ? Math.min(1, Math.max(0, done) / f) : 0, b = f > 0 && lw ? Math.min(1 - a, left / f) : 0;
+// un rând de prognoză: valoarea prognozată, bara de progres (plin = real, punctat = ce mai urmează după prognoză,
+// gol = cât a rămas realul sub prognoza timpului trecut); ex = texte în plus la legendă
+const fcRow = (k, f, done, left, pc, pw, lw, ex = []) => {
+  const a = f > 0 ? Math.min(1, Math.max(0, done) / f) : 0, b = f > 0 && lw ? Math.min(1 - a, left / f) : 0, gap = f * Math.max(0, 1 - a - b);
   const bar = `<div class="bar"><span style="flex:${a.toFixed(4)} 0 0;background:${C.soft}"></span>${b > 0 ? `<span class="fl" style="flex:${b.toFixed(4)} 0 0"></span>` : ''}<span style="flex:${Math.max(0, 1 - a - b).toFixed(4)} 0 0"></span></div>`;
-  const p = (pc ? `<span><i style="background:${C.soft}"></i><b>${pc}</b> ${pw}</span>` : '') + (lw ? `<span><i class="fl"></i><b>${kwh(left)} kWh</b> ${lw}</span>` : '');
+  const p = (pc ? `<span><i style="background:${C.soft}"></i><b>${pc}</b> ${pw}</span>` : '') + (lw ? `<span><i class="fl"></i><b>${kwh(left)} kWh</b> ${lw}</span>` : '')
+    + (gap >= Math.max(0.05, f * 0.03) ? `<span><i class="gp"></i><b>${kwh(gap)} kWh</b> sub prognoză</span>` : '') + ex.map((x) => `<span>${x}</span>`).join('');
   return `<div class="k">${k}</div><div class="n">${kwU(f)}</div><div class="r">${bar}<div class="p">${p}</div></div>`;
 };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -206,7 +208,7 @@ const MONTH_V = ['luna', 'masina', 'baterie'];
 // starea de încărcare pe zile: bară de la minim la maxim, linie la medie; aceleași zone de hover ca barChart
 function rangeChart(W, H, rows, o) {
   const fz = o.fz || 1, fs = Math.round(12 * fz);
-  const ml = Math.round(44 * fz), mr = 8, mt = Math.round(24 * fz), mb = Math.round(26 * fz), iw = W - ml - mr, ih = H - mt - mb;
+  const ml = Math.round(44 * fz), mr = 8, mt = Math.round(24 * fz), mb = Math.round(26 * fz), iw = Math.max(1, W - ml - mr), ih = Math.max(1, H - mt - mb);
   const y = (v) => mt + ih * (100 - Math.max(0, Math.min(100, v))) / 100;
   const step = iw / Math.max(1, rows.length), bw = Math.max(2, Math.min(o.maxBar || 16, step * 0.72)), rr = Math.min(3, bw / 2);
   let g = '';
@@ -242,7 +244,7 @@ const PAY_CHARTS = [
 // bare stivuite în sus / în jos, cu linie opțională; întoarce SVG
 function barChart(W, H, rows, o) {
   const up = o.up || [], down = o.down || [], line = o.line, fz = o.fz || 1, fs = Math.round(12 * fz);
-  const ml = Math.round(44 * fz), mr = 8, mt = o.unit ? Math.round(24 * fz) : 10, mb = Math.round(26 * fz), iw = W - ml - mr, ih = H - mt - mb;
+  const ml = Math.round(44 * fz), mr = 8, mt = o.unit ? Math.round(24 * fz) : 10, mb = Math.round(26 * fz), iw = Math.max(1, W - ml - mr), ih = Math.max(1, H - mt - mb);
   const val = (r, c) => r.v[c];
   const dash = o.dash;
   const maxUp = Math.max(0.1, ...rows.map((r) => Math.max(up.reduce((a, c) => a + val(r, c), 0), line ? r[line] : 0, dash && isFinite(r[dash]) ? r[dash] : 0)));
@@ -251,13 +253,14 @@ function barChart(W, H, rows, o) {
   const top = nice(maxUp), bot = down.length ? nice(maxDn) : 0;
   const y = (v) => mt + ih * (top - v) / (top + bot);
   const step = iw / Math.max(1, rows.length), bw = Math.max(2, Math.min(o.maxBar || 24, step * 0.72));
-  const tick = nice((top + bot) / 5), tf = tick < 1 ? F1 : F0, vals = [];
+  // zecimale cât cere pasul (0,05 → două), ca etichetele să nu se repete
+  const tick = nice((top + bot) / 5), tf = tick < 0.1 ? F2 : tick < 1 ? F1 : F0, vals = [];
   for (let v = 0; v <= top + 1e-9; v += tick) vals.push(v);
   for (let v = -tick; v >= -bot - 1e-9; v -= tick) vals.push(v);
   let g = '';
   for (const v of vals) {
     g += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="${C.grid}" stroke-width="1"/>`;
-    g += `<text x="${ml - 6}" y="${y(v) + fs * 0.36}" text-anchor="end" fill="${C.muted}" font-size="${fs}">${tf(Math.abs(v))}</text>`;
+    g += `<text x="${ml - 6}" y="${y(v) + fs * 0.36}" text-anchor="end" fill="${C.muted}" font-size="${fs}">${v < 0 ? '−' : ''}${tf(Math.abs(v))}</text>`;
   }
   if (o.unit) g += `<text x="${ml - 6}" y="${fs}" text-anchor="end" fill="${C.muted}" font-size="${fs}">${o.unit}</text>`;
   const every = Math.max(1, Math.ceil(rows.length / Math.max(2, Math.floor(iw / ((o.labelW || 46) * fz)))));
@@ -343,6 +346,7 @@ const RAW_CSS = `
 .sum .p b{color:${C.fg};font-weight:500;font-variant-numeric:tabular-nums}
 .sum .p i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:0}
 .sum .fl{background:#5c5c5c}
+.sum .p i.gp{background:${C.grid};box-shadow:inset 0 0 0 1px #5c5c5c}
 h2{font-size:18px;font-weight:500;margin:10px 0 0;color:${C.fg}}
 h2 small{font-weight:400;color:${C.muted};font-size:14px;margin-left:8px}
 .ttl{color:${C.fg};font-size:16px;font-weight:500;margin:0 0 4px}
@@ -685,7 +689,9 @@ class VictronVrmCard extends HTMLElement {
       let rows, years = null;
       if (v === 'zi') {
         const r = await this._ws({ type: 'victron_vrm/hours', date: iso(from) }, live);
-        rows = Array.from({ length: 24 }, (_, i) => Object.assign(mk(p2(i), r.hours[p2(i)], r.codes), { label: p2(i), tip: `${p2(i)}:00 – ${p2(i + 1)}:00` }));
+        // orele care n-au venit încă nu apar în tabel (graficele le păstrează, goale)
+        const hNow = +from === +t ? new Date().getHours() : +from > +t ? -1 : 24;
+        rows = Array.from({ length: 24 }, (_, i) => Object.assign(mk(p2(i), r.hours[p2(i)], r.codes), { label: p2(i), tip: `${p2(i)}:00 – ${p2(i + 1)}:00`, future: i > hNow }));
       } else if (v === 'an') {
         const r = await this._ws({ type: 'victron_vrm/years' }, true);
         const y = r.years[String(from.getFullYear())];
@@ -755,9 +761,9 @@ class VictronVrmCard extends HTMLElement {
     const hours = 24 * (v === 'an' ? rows.reduce((a, r) => a + (r.days || 0), 0) : n);
     const lossW = hours > 0 ? tot.loss / hours * 1000 : NaN;
     const take = `<div class="sum">${sumRow('Producție', kwU(tot.prod), [[tot.v.Pc, FLOW.Pc, 'consum direct'], [tot.v.Pb, FLOW.Pb, 'în baterie'], [tot.v.Pg, FLOW.Pg, 'în rețea']])}`
-      + sumRow(hasEv ? 'Casa' : 'Consum', kwU(tot.house), [[tot.v.hPc, FLOW.Pc, 'solar'], [tot.v.hBc, FLOW.Bc, 'baterie'], [tot.v.hGc, FLOW.Gc, 'rețea']])
+      + sumRow(hasEv ? 'Casă' : 'Consum', kwU(tot.house), [[tot.v.hPc, FLOW.Pc, 'solar'], [tot.v.hBc, FLOW.Bc, 'baterie'], [tot.v.hGc, FLOW.Gc, 'rețea']])
       + (hasEv ? sumRow('Mașina', kwU(tot.ev), [[tot.v.Pe, FLOW.Pc, 'solar'], [tot.v.Be, FLOW.Bc, 'baterie'], [tot.v.Ge, FLOW.Gc, 'rețea']]) : '')
-      + (pl ? sumRow('Câștig', leiU(tot.gain), [[tot.v.eco, FLOW.eco, 'autoconsum'], [tot.v.injv, FLOW.injv, 'injecție']], v === 'zi' ? [] : [`Ø <b>${leiS(tot.gain / n)}</b> lei/${unit}`]) : '')
+      + (pl ? sumRow('Câștig', leiU(tot.gain), [[tot.v.eco, FLOW.eco, 'din autoconsum'], [tot.v.injv, FLOW.injv, 'din injecție']], v === 'zi' ? [] : [`Ø <b>${leiS(tot.gain / n)}</b> lei/${unit}`]) : '')
       + this._fcTake(rows, tot) + '</div>';
 
     const first = { zi: 'Ora', saptamana: 'Ziua', luna: 'Ziua', an: 'Luna' }[v];
@@ -812,7 +818,9 @@ ${this._yearsTable()}${this._foot()}`;
   _fcTake(rows, tot) {
     const v = this._cfg.view, t = today(), fr = rows.filter((r) => isFinite(r.fsol));
     if (!fr.length) return '';
-    const fs = sumK(fr, 'fsol'), fk = sumK(fr, 'fcons');
+    const fs = sumK(fr, 'fsol'), fk = sumK(fr, 'fcons'), fev = sumK(fr, 'fev');
+    // prognoza de consum a VRM include și încărcarea mașinii pe care o anticipează
+    const exK = fev >= 0.05 ? [`include mașina: <b>${kwh(fev)} kWh</b>`] : [];
     if (v === 'zi') {
       const isToday = +this._range().from === +t;
       const now = new Date(), h = now.getHours(), fr0 = 1 - now.getMinutes() / 60;
@@ -820,13 +828,13 @@ ${this._yearsTable()}${this._foot()}`;
       const rest = (k) => (isToday ? fr.reduce((a, r) => a + (+r.k > h ? r[k] : +r.k === h ? r[k] * fr0 : 0), 0) : 0);
       const ls = rest('fsol'), lk = rest('fcons');
       return fcRow('Prognoză producție', fs, tot.prod, ls, pct(tot.prod / fs), 'realizat', ls >= 0.05 ? 'mai urmează' : '')
-        + fcRow('Prognoză consum', fk, tot.cons, lk, pct(tot.cons / fk), 'realizat', lk >= 0.05 ? 'mai urmează' : '');
+        + fcRow('Prognoză consum', fk, tot.cons, lk, pct(tot.cons / fk), 'realizat', lk >= 0.05 ? 'mai urmează' : '', exK);
     }
     // ca pe Zi: realul de până acum ÷ prognoza zilelor afișate, plus prognoza zilelor care urmează
     const next = fr.filter((r) => r.d > t), done = sum(fr.filter((r) => r.d <= t && r.any));
     const nw = next.length === 1 ? 'mâine' : `în următoarele ${next.length} zile`;
     return fcRow('Prognoză producție', fs, done.prod, sumK(next, 'fsol'), pct(done.prod / fs), 'realizat', next.length ? nw : '')
-      + fcRow('Prognoză consum', fk, done.cons, sumK(next, 'fcons'), pct(done.cons / fk), 'realizat', next.length ? nw : '');
+      + fcRow('Prognoză consum', fk, done.cons, sumK(next, 'fcons'), pct(done.cons / fk), 'realizat', next.length ? nw : '', exK);
   }
   // o zi sau o săptămână fără date reale încă: doar prognoza VRM
   _renderFc(w, nav) {
@@ -905,7 +913,7 @@ ${this._foot()}`;
       const el = root.getElementById(c.id);
       if (!el) continue;
       const W = el.clientWidth;
-      if (!W || this._cws[c.id] === W) continue;
+      if (!W || W < 100 || this._cws[c.id] === W) continue;
       this._cws[c.id] = W;
       this._draw(el, c, W, 220);
     }
@@ -1203,8 +1211,9 @@ ${gx ? this._gxCmp(from, to, price(ym(from))) : ''}
     const vi = [isFinite(num('voltage')) ? `${F1(num('voltage'))} V` : '', isFinite(num('current')) ? `${F1(Math.abs(num('current')))} A` : '', isFinite(num('temp')) ? `${F0(num('temp'))} °C` : ''].filter(Boolean).join(' · ');
     const pwK = kpi(chg ? 'Putere de încărcare' : dis ? 'Putere de descărcare' : 'Putere', isFinite(pw) ? F1(Math.abs(pw) / 1000) : '—', 'kW', vi);
     const left = S('left') ? S('left').state : null, full = S('full') ? S('full').state : null;
-    const t = chg && isDur(full) ? [full, 'până la 100%'] : dis && isDur(left) ? [left, 'până la rezervă'] : null;
-    const tK = (E.left || E.full) ? kpi('Autonomie', t ? esc(t[0]) : '—', '', t ? t[1] : esc((chg ? full : left) || 'nu se descarcă')) : '';
+    const t = chg && isDur(full) ? [full, 'în ritmul de acum'] : dis && isDur(left) ? [left, 'până la rezervă'] : null;
+    // la încărcare caseta arată cât mai durează până la plin, nu autonomia
+    const tK = (E.left || E.full) ? kpi(chg ? 'Până la 100%' : 'Autonomie', t ? esc(t[0]) : '—', '', t ? t[1] : esc((chg ? full : left) || 'nu se descarcă')) : '';
     const ms = S('minsoc'), msv = this._batM != null ? this._batM : num('minsoc');
     const mmin = ms && isFinite(+ms.attributes.min) ? +ms.attributes.min : 0, mmax = ms && isFinite(+ms.attributes.max) ? +ms.attributes.max : 100;
     const modes = mode && !ESS_MODES.some(([k]) => k === mode) ? [...ESS_MODES, [mode, mode === 'external_control' ? 'Control extern' : mode]] : ESS_MODES;
@@ -1221,7 +1230,7 @@ ${gx ? this._gxCmp(from, to, price(ym(from))) : ''}
       return `<div class="fld"><label for="lim-${k}">${l}</label><div class="in"><input id="lim-${k}" data-k="${k}" type="text" inputmode="numeric" autocomplete="off" placeholder="fără limită" value="${isFinite(v) && v >= 0 ? F0(v).replace(/\./g, '') : ''}"${h ? ` aria-describedby="lim-${k}-h"` : ''}><span>${u}</span></div>${h ? `<div class="h" id="lim-${k}-h">${h}</div>` : ''}</div>`;
     }).join('');
     return `<div class="box live">
- <div class="hd"><div><div class="ttl">Bateria acum</div><div class="note" style="margin:0">${mode ? esc(ESS_NOTE[mode] || mode) : 'acum'}</div></div>
+ <div class="hd"><div><div class="ttl">Bateria acum</div>${mode ? `<div class="note" style="margin:0">${esc(ESS_NOTE[mode] || mode)}</div>` : ''}</div>
   <span class="pill${pill[0] ? ' ' + pill[0] : ''}"><i></i>${pill[1]}</span></div>
  <div class="kpis" style="--k:${tK ? 3 : 2};margin-top:12px">${socK}${pwK}${tK}</div>
  ${ctl ? `<div class="ctl">${ctl}</div>` : ''}
@@ -1356,7 +1365,7 @@ ${gx ? this._gxCmp(from, to, price(ym(from))) : ''}
     const per = `${LUNI_L[from.getMonth()]} ${from.getFullYear()}`;
     const first = parse(this._info.start);
     const take = n
-      ? `În ${per}, bateria s-a încărcat cu <b>${kwh(tot.chg)} kWh</b>, <b>${tot.chg > 0 ? pct(tot.v.Pb / tot.chg) : '—'}</b> din solar, și a dat <b>${kwh(tot.dis)} kWh</b>: <b>${kwh(tot.v.Bc)} kWh</b> spre consum și <b>${kwh(tot.v.Bg)} kWh</b> în rețea. `
+      ? `În ${per}, bateria s-a încărcat cu <b>${kwh(tot.chg)} kWh</b>, <b>${tot.chg > 0 ? pct(tot.v.Pb / tot.chg) : '—'}</b> din solar, și a dat <b>${kwh(tot.dis)} kWh</b>${tot.v.Bg >= 0.05 ? `, din care <b>${kwh(tot.v.Bg)} kWh</b> în rețea` : ', toată spre consum'}. `
         + `A acoperit <b>${tot.cons > 0 ? pct(tot.v.Bc / tot.cons) : '—'}</b> din consumul casei${tot.ev > 0 ? ' și al mașinii' : ''}`
         + (isFinite(capK) ? `, cât <b>${F1(tot.dis / capK)} cicluri</b> complete.` : '.')
         + (isFinite(smin) ? ` Starea de încărcare a fost între <b>${F0(smin)}%</b> și <b>${F0(smax)}%</b>.` : '')
@@ -1477,7 +1486,7 @@ ${yrows ? `<h2>Pe ani<small>apasă pe un an pentru ultima lui lună</small></h2>
 <div class="kpis" style="--k:3">${kpi('Câștig mediu', isFinite(rate) ? lei(rate) : '—', 'lei/zi', `${n12 === 12 ? 'ultimele 12 luni încheiate' : `ultimele ${n12} luni`}${atNow} · ≈ ${isFinite(rate) ? lei(rate * 30.44) : '—'} lei/lună`)}${kpi('Timp rămas', remain, '', 'dacă ritmul se păstrează')}${kpi('Amortizare estimată', paidAt ? cap(`${LUNI_L[paidAt.d.getMonth()]} ${paidAt.d.getFullYear()}`) : eta ? cap(`${LUNI_L[eta.getMonth()]} ${eta.getFullYear()}`) : '—', '', paidAt ? 'investiția e recuperată' : 'luna în care câștigul acoperă investiția')}
 ${kpi('Randament anual', isFinite(roi) ? F1(roi * 100) : '—', '%', `${isFinite(rate) ? lei(rate * 365.25) : '—'} lei/an din ${lei(inv)} lei`)}${kpi('Fără sistem', lei(yr12.billNo), 'lei', `factura pe ${n12 === 12 ? 'ultimele 12 luni' : `${n12} luni`}, tot consumul din rețea`)}${kpi('Cu sistem', sgn(yr12.bill), 'lei', `factura pe ${n12 === 12 ? 'ultimele 12 luni' : `${n12} luni`}, cu compensarea lunară`)}</div>
 <div class="charts">${PAY_CHARTS.map((c) => this._box(c)).join('')}</div>
-<div class="box"><div class="ttl">Pe luni</div><div class="note">Apasă pe o lună pentru detalii</div>
+<div class="box"><div class="ttl">Pe luni</div><div class="note">Apasă pe o lună pentru detalii${months.some((r) => r.bill < 0) ? ' · „Cu sistem” negativ: injecția a valorat mai mult decât importul, diferența rămâne credit' : ''}</div>
  <div class="tw"><table><thead><tr><th>Luna</th>${th2}${th('Recuperat', '', 'lei', 'hn')}</tr></thead><tbody>${mrows}</tbody></table></div></div>
 <h2>Pe ani</h2><div class="box"><div class="tw"><table><thead><tr><th>An</th>${th2}</tr></thead><tbody>${years}</tbody><tfoot><tr><td>Total</td>${cols(tot)}</tr></tfoot></table></div></div>
 <div class="foot">${list.length > 1 ? `Prețuri din Setări: fiecare lună cu prețul ei, acum ${F2(P)} lei/kWh din rețea și ${F2(PI)} lei/kWh injectat` : `Preț din Setări: ${F2(P)} lei/kWh din rețea, ${F2(PI)} lei/kWh injectat, pentru toată perioada`} · importul și injecția se compensează lunar · istoric VRM din ${since}</div>`;
