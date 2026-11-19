@@ -16,9 +16,20 @@ summary:
         select:
           options:
             - day
+            - week
             - month
             - year
           translation_key: period
+    date:
+      selector:
+        date:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: victron_vrm
+
+solar_window:
+  fields:
     date:
       selector:
         date:

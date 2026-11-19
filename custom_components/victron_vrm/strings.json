@@ -50,15 +50,23 @@
     },
     "summary": {
       "name": "Summary",
-      "description": "Energy totals for a day, month or year, with a ready-made notification text. Without a date it returns the last complete period (yesterday, last month, last year).",
+      "description": "Energy totals for a day, week (Monday to Sunday), month or year, with a ready-made notification text. Without a date it returns the last complete period (yesterday, last week, last month, last year).",
       "fields": {
-        "period": { "name": "Period", "description": "Day, month or year." },
+        "period": { "name": "Period", "description": "Day, week, month or year." },
         "date": { "name": "Date", "description": "Any day inside the period. Defaults to the last complete period." },
+        "config_entry_id": { "name": "Installation", "description": "Only needed with more than one VRM installation." }
+      }
+    },
+    "solar_window": {
+      "name": "Solar window",
+      "description": "The sunniest run of hours of a day by VRM's forecast: solar above the house's forecast use, with a ready-made notification text.",
+      "fields": {
+        "date": { "name": "Date", "description": "Defaults to tomorrow." },
         "config_entry_id": { "name": "Installation", "description": "Only needed with more than one VRM installation." }
       }
     }
   },
   "selector": {
-    "period": { "options": { "day": "Day", "month": "Month", "year": "Year" } }
+    "period": { "options": { "day": "Day", "week": "Week", "month": "Month", "year": "Year" } }
   }
 }

@@ -42,6 +42,9 @@ CARD_MARKER = "/* victron-vrm-card"
 
 SERVICE_RESYNC = "resync"
 SERVICE_SUMMARY = "summary"
+SERVICE_SOLAR_WINDOW = "solar_window"
+# a solar window worth a notification: kWh of forecast surplus over the house
+SOLAR_WINDOW_USEFUL = 3.0
 
 # Financial settings, kept in the config entry options and edited from the card.
 #   investment    lei paid for the system

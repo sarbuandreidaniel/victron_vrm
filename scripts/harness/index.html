@@ -181,6 +181,12 @@
         const a = iso(new Date(m.start_time)), b = iso(new Date(+new Date(m.end_time) - 1));
         return { [m.statistic_ids[0]]: Object.entries(socDay).filter(([k]) => k >= a && k <= b && k >= socFrom).map(([, p]) => p) };
       }
+      // kilometrajul mașinii, o citire pe zi (aceleași valori la fiecare încărcare a paginii)
+      if (m.type === 'victron_vrm/odometer') {
+        const out = {}; let km = 3000;
+        for (let d = new Date(START); iso(d) <= m.end; d.setDate(d.getDate() + 1)) { km += 20 + (d.getDate() * 7) % 40; if (iso(d) >= m.start) out[iso(d)] = km; }
+        return { entity: 'sensor.demo_odometer', days: out };
+      }
       if (m.type === 'victron_vrm/finance') {
         hass.calls.push(m);
         const f = {};

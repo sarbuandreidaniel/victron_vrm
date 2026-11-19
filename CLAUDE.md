@@ -17,7 +17,8 @@ Card internals (constants, methods, CSS, recipes) are in [docs/card.md](docs/car
 | `money.py` | `price_at(finance, 'YYYY-MM')` and `day_cash(vals, P, PI)`, the card's `cash()` in Python for the gain sensor (`scripts/test_money.py`) |
 | `websocket.py` | card API: `victron_vrm/info`, `years`, `days`, `hours`, `ev`, `ev_gx`, `flows`, `forecast`, `finance`, `panel` |
 | `ev_gx.py` | EV energy from the charger's own meter: `EvMeter` copies its hourly HA statistics into `.storage/victron_vrm.<entry_id>.ev_meter` on every coordinator update; `split()` divides it by source with VRM's hourly flows |
-| `summary.py`, `__init__.py`, `services.yaml` | services `summary` (response only; yesterday's day summary adds today's forecast as `forecast` and a last message line) and `resync` |
+| `summary.py`, `__init__.py`, `services.yaml` | services `summary` (response only; periods day / week (Monday–Sunday) / month / year, losses only on month and year; yesterday's day summary adds today's forecast as `forecast` and a last message line), `solar_window` (response only; date, default tomorrow: `forecast.solar_window()` = the run of hours with forecast solar ≥ 0.3 kWh above the house's forecast use (consumption − ev), `useful` from 3 kWh, `title` / `message` for a notification) and `resync` |
+| `odometer.py` | the car's odometer from victron_gx (unique id `…_ev_odometer`, no state class, so no statistics): the coordinator keeps the highest reading of each local day in `.storage/victron_vrm.<entry_id>.odometer` (`days {YYYY-MM-DD: km}`), seeded once from the recorder's state history; `victron_vrm/odometer` serves it |
 | `frontend.py` | registers the card as an inline `data:` Lovelace module and refreshes it on startup |
 | `frontend/victron-vrm-card.js` | the card, one self-contained file; must start with `/* victron-vrm-card` |
 | `const.py` | `CODES`, intervals, option keys |
@@ -69,6 +70,7 @@ All commands take an optional `entry_id`.
 | `victron_vrm/forecast` (`start`, `end`) | `codes: [solar, consumption, ev], days: {YYYY-MM-DD: {t, h: {HH: values}}}, fetched`, kWh |
 | `victron_vrm/finance` (admin) | saves the finance options, answers `{finance}` |
 | `victron_vrm/panel` (admin, `panel`: one of `PANEL_COLORS` or null) | saves the boxes' background, answers `{panel}` |
+| `victron_vrm/odometer` (`start`, `end`) | `entity, days: {YYYY-MM-DD: km}`, one reading per day the integration saw the car's odometer |
 
 `finance` lives in the config entry options: `investment` (lei), `prices: [{from: "YYYY-MM" | null, import, export}]` (lei/kWh), plus `price_import` / `price_export` mirroring the last price. The handler sorts by `from`, forces the first `from` to null and rejects two prices starting in the same month. Entries saved before price history have only the two plain fields; the card's `priceList()` turns them into one period.
 

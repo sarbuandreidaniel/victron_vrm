@@ -24,7 +24,9 @@ from .const import (
     CONF_SITE_ID,
     DOMAIN,
     SERVICE_RESYNC,
+    SERVICE_SOLAR_WINDOW,
     SERVICE_SUMMARY,
+    SOLAR_WINDOW_USEFUL,
     STORAGE_VERSION,
 )
 from .coordinator import VrmCoordinator
@@ -32,7 +34,8 @@ from .ev_gx import EvMeter
 from .forecast import VrmForecast
 from .frontend import async_register_card, async_unregister_card
 from .history import VrmHistory
-from .summary import PERIODS, default_day, summarize
+from .odometer import Odometer
+from .summary import MONTHS, PERIODS, WEEKDAYS, _num, default_day, summarize
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +49,13 @@ RESYNC_SCHEMA = vol.Schema(
     {
         vol.Required("start_date"): cv.date,
         vol.Optional("end_date"): cv.date,
+    }
+)
+
+SOLAR_WINDOW_SCHEMA = vol.Schema(
+    {
+        vol.Optional("date"): cv.date,
+        vol.Optional("config_entry_id"): cv.string,
     }
 )
 
@@ -75,8 +85,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.services.async_register(DOMAIN, SERVICE_RESYNC, resync, schema=RESYNC_SCHEMA)
 
-    async def summary(call: ServiceCall) -> ServiceResponse:
-        """Totals for a day, month or year; by default the last complete one."""
+    def loaded_entry(call: ServiceCall) -> VrmConfigEntry:
         entry_id = call.data.get("config_entry_id")
         entry = next(
             (
@@ -87,6 +96,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
         if entry is None:
             raise ServiceValidationError("Victron VRM is not set up")
+        return entry
+
+    async def summary(call: ServiceCall) -> ServiceResponse:
+        """Totals for a day, week, month or year; by default the last complete one."""
+        entry = loaded_entry(call)
         period: str = call.data["period"]
         day: date = call.data.get("date") or default_day(period, dt_util.now().date())
         coordinator: VrmCoordinator = entry.runtime_data
@@ -101,6 +115,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_SUMMARY,
         summary,
         schema=SUMMARY_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def solar_window(call: ServiceCall) -> ServiceResponse:
+        """The sunniest run of hours of a day (default tomorrow): forecast solar above the house's use."""
+        coordinator: VrmCoordinator = loaded_entry(call).runtime_data
+        today = dt_util.now().date()
+        day: date = call.data.get("date") or today + timedelta(days=1)
+        win = coordinator.forecast.solar_window(day)
+        when = "Mâine" if day == today + timedelta(days=1) else "Azi" if day == today else f"{WEEKDAYS[day.weekday()].capitalize()}, {day.day} {MONTHS[day.month - 1]}"
+        out: dict = {"date": day.isoformat(), "window": win, "useful": bool(win and win["surplus_kwh"] >= SOLAR_WINDOW_USEFUL)}
+        out["title"] = "Soare pentru mașină"
+        out["message"] = (
+            f"☀️ {when} între {win['start']:02d}:00 și {win['end']:02d}:00: ~{_num(win['surplus_kwh'], 0)} kWh soare "
+            "peste consumul casei, după prognoza VRM. Un moment bun pentru încărcarea mașinii (bateria ia și ea din surplus)."
+            if win else f"☀️ {when}: prognoza VRM nu are ore cu soare peste consumul casei."
+        )
+        return out
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SOLAR_WINDOW,
+        solar_window,
+        schema=SOLAR_WINDOW_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
     return True
@@ -121,8 +159,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> bool:
     await forecast.async_load()
     ev_meter = EvMeter(hass, entry.entry_id, history.start)
     await ev_meter.async_load()
+    odometer = Odometer(hass, entry.entry_id)
+    await odometer.async_load()
 
-    coordinator = VrmCoordinator(hass, entry, history, forecast, ev_meter)
+    coordinator = VrmCoordinator(hass, entry, history, forecast, ev_meter, odometer)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
 
@@ -138,8 +178,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> bool
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: VrmConfigEntry) -> None:
-    """Delete the cached history, forecasts and EV meter copy together with the entry."""
-    for suffix in ("", ".forecast", ".ev_meter"):
+    """Delete the cached history, forecasts, EV meter and odometer copies together with the entry."""
+    for suffix in ("", ".forecast", ".ev_meter", ".odometer"):
         await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}{suffix}").async_remove()
     if not hass.config_entries.async_entries(DOMAIN):
         await async_unregister_card(hass)

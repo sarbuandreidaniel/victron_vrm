@@ -15,6 +15,7 @@ from .const import DOMAIN, UPDATE_INTERVAL
 from .ev_gx import EvMeter
 from .forecast import VrmForecast
 from .history import VrmHistory
+from .odometer import Odometer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class VrmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         history: VrmHistory,
         forecast: VrmForecast,
         ev_meter: EvMeter,
+        odometer: Odometer,
     ) -> None:
         super().__init__(
             hass,
@@ -40,6 +42,7 @@ class VrmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.history = history
         self.forecast = forecast
         self.ev_meter = ev_meter
+        self.odometer = odometer
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -57,6 +60,10 @@ class VrmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.ev_meter.async_sync()
         except Exception:  # noqa: BLE001 - the VRM data must not depend on the recorder
             _LOGGER.exception("Cannot copy the EV charger meter statistics")
+        try:
+            await self.odometer.async_sync()
+        except Exception:  # noqa: BLE001 - same: the odometer is extra
+            _LOGGER.exception("Cannot read the car's odometer")
         return {"synced": self.history.synced, "today": self.history.today()}
 
     async def async_run_backfill(self) -> None:

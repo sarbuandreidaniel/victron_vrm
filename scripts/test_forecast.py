@@ -78,10 +78,10 @@ def test_summary_forecast_line():
     fc = {"date": date(2026, 11, 10), "t": [14.8, 27.0, 7.4]}
     out = summarize("day", date(2026, 11, 9), vals, 1, forecast=fc)
     # the forecast must not change the day's own figures
-    assert out["kwh"]["ev"] == 4 and "🚗 Mașina 4,0 kWh, 50% din solar + baterie" in out["message"], out["message"]
+    assert out["kwh"]["ev"] == 4 and "🚗 Mașina 4,0 kWh: ☀️+🔋 50%" in out["message"], out["message"]
     assert out["forecast"] == {"date": "2026-11-10", "production": 14.8, "consumption": 27.0, "ev": 7.4}
     last = out["message"].splitlines()[-1]
-    assert last == "🔮 Azi, după prognoza VRM: soare ~14,8 kWh · consum ~27,0 kWh, din care mașina ~7,4", last
+    assert last == "🔮 Azi: soare ~14,8 · consum ~27,0 kWh (mașina ~7,4)", last
     no_car = summarize("day", date(2026, 11, 9), vals, 1, forecast={"date": date(2026, 11, 10), "t": [3, 20, 0]})
     assert no_car["message"].endswith("consum ~20,0 kWh")
     plain = summarize("day", date(2026, 11, 9), vals, 1)

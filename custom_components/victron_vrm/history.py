@@ -287,10 +287,19 @@ class VrmHistory:
         return out
 
     def period(self, period: str, day: date) -> tuple[list[float] | None, int]:
-        """Totals and number of days with data for the day / month / year of `day`."""
+        """Totals and number of days with data for the day / week / month / year of `day`."""
         if period == "day":
             d = self._day(day)
             return (d["t"], 1) if d else (None, 0)
+        if period == "week":
+            monday = day - timedelta(days=day.weekday())
+            days = self.days(monday, monday + timedelta(days=6))
+            if not days:
+                return None, 0
+            tot = _zero()
+            for vals in days.values():
+                _add(tot, vals)
+            return _round(tot), len(days)
         year = self.data["years"].get(str(day.year))
         if not year:
             return None, 0

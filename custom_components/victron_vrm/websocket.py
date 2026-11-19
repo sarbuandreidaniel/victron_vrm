@@ -54,6 +54,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_ev_gx)
     websocket_api.async_register_command(hass, ws_flows)
     websocket_api.async_register_command(hass, ws_forecast)
+    websocket_api.async_register_command(hass, ws_odometer)
     websocket_api.async_register_command(hass, ws_finance)
     websocket_api.async_register_command(hass, ws_panel)
 
@@ -294,3 +295,20 @@ def ws_panel(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
         options[OPT_PANEL] = msg["panel"]
     hass.config_entries.async_update_entry(entry, options=options)
     connection.send_result(msg["id"], {"panel": msg["panel"]})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/odometer",
+        vol.Required("start"): _parse,
+        vol.Required("end"): _parse,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def ws_odometer(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The car's odometer, one reading (km) per local day the integration saw it."""
+    if (entry := _entry(hass, msg)) is None:
+        return _not_loaded(connection, msg)
+    odo = entry.runtime_data.odometer
+    connection.send_result(msg["id"], {"entity": odo.entity(), "days": odo.days(msg["start"], msg["end"])})

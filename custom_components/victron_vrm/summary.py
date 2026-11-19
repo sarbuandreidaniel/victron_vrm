@@ -1,4 +1,4 @@
-"""Period summaries (day / month / year) returned by the summary service.
+"""Period summaries (day / week / month / year) returned by the summary service.
 
 The figures match the dashboard card: EV flows are a part of Pc / Bc / Gc, the
 house is consumption without the EV, and losses (charge − discharge) are only
@@ -12,7 +12,11 @@ from typing import Any
 
 from .const import CODES
 
-PERIODS = ("day", "month", "year")
+PERIODS = ("day", "week", "month", "year")
+
+# Push notifications on iOS arrive cut at 256 UTF-16 code units (an emoji
+# counts two); keep the message under that with some room.
+MESSAGE_MAX = 250
 
 WEEKDAYS = ("luni", "marți", "miercuri", "joi", "vineri", "sâmbătă", "duminică")
 MONTHS = (
@@ -22,9 +26,11 @@ MONTHS = (
 
 
 def default_day(period: str, today: date) -> date:
-    """A day inside the last complete period: yesterday, last month or last year."""
+    """A day inside the last complete period: yesterday, last week (Monday to Sunday), last month or last year."""
     if period == "day":
         return today - timedelta(days=1)
+    if period == "week":
+        return today - timedelta(days=today.weekday() + 1)
     if period == "month":
         return today.replace(day=1) - timedelta(days=1)
     return date(today.year - 1, 12, 31)
@@ -34,6 +40,9 @@ def bounds(period: str, day: date) -> tuple[date, date]:
     """First and last day of the period that contains `day`."""
     if period == "day":
         return day, day
+    if period == "week":
+        monday = day - timedelta(days=day.weekday())
+        return monday, monday + timedelta(days=6)
     if period == "month":
         nxt = date(day.year + 1, 1, 1) if day.month == 12 else date(day.year, day.month + 1, 1)
         return day.replace(day=1), nxt - timedelta(days=1)
@@ -43,6 +52,13 @@ def bounds(period: str, day: date) -> tuple[date, date]:
 def label(period: str, day: date) -> str:
     if period == "day":
         return f"{WEEKDAYS[day.weekday()]}, {day.day} {MONTHS[day.month - 1]} {day.year}"
+    if period == "week":
+        a, b = bounds("week", day)
+        if a.month == b.month:
+            return f"{a.day}–{b.day} {MONTHS[b.month - 1]} {b.year}"
+        if a.year == b.year:
+            return f"{a.day} {MONTHS[a.month - 1]} – {b.day} {MONTHS[b.month - 1]} {b.year}"
+        return f"{a.day} {MONTHS[a.month - 1]} {a.year} – {b.day} {MONTHS[b.month - 1]} {b.year}"
     if period == "month":
         return f"{MONTHS[day.month - 1]} {day.year}"
     return str(day.year)
@@ -65,8 +81,22 @@ def pct(part: float, whole: float) -> str:
 def forecast_line(fc: dict[str, Any]) -> str:
     """One notification line with today's VRM forecast: solar, consumption, of which the car."""
     solar, cons, ev = fc["t"]
-    car = f", din care mașina ~{kwh(ev)}" if ev >= 0.1 else ""
-    return f"🔮 Azi, după prognoza VRM: soare ~{kwh(solar)} kWh · consum ~{kwh(cons)} kWh{car}"
+    car = f" (mașina ~{kwh(ev)})" if ev >= 0.1 else ""
+    return f"🔮 Azi: soare ~{kwh(solar)} · consum ~{kwh(cons)} kWh{car}"
+
+
+def units(text: str) -> int:
+    """Length in UTF-16 code units, the way the notification limit counts."""
+    return len(text.encode("utf-16-le")) // 2
+
+
+def fit(lines: list[str], optional: tuple[str, ...]) -> str:
+    """Join the lines, dropping the optional ones (by prefix, in order) until it fits MESSAGE_MAX."""
+    for prefix in optional:
+        if units("\n".join(lines)) <= MESSAGE_MAX:
+            break
+        lines = [ln for ln in lines if not ln.startswith(prefix)]
+    return "\n".join(lines)
 
 
 def summarize(
@@ -139,21 +169,22 @@ def summarize(
     per_day = f" ({kwh(prod / days)} kWh/zi)" if period != "day" and days else ""
     lines = [
         f"☀️ Producție {kwh(prod)} kWh{per_day}",
-        f"🏠 Casa {kwh(house)} kWh: {pct(house_solar, house)} solar, "
-        f"{pct(house_bat, house)} baterie, {pct(house_grid, house)} rețea",
+        # shares by source, marked with the emoji of the lines below (☀️ solar, 🔋 battery, ⚡ grid)
+        f"🏠 Casa {kwh(house)} kWh: ☀️ {pct(house_solar, house)} · "
+        f"🔋 {pct(house_bat, house)} · ⚡ {pct(house_grid, house)}",
     ]
     if ev > 0:
-        lines.append(f"🚗 Mașina {kwh(ev)} kWh, {pct(v['Pe'] + v['Be'], ev)} din solar + baterie")
+        lines.append(f"🚗 Mașina {kwh(ev)} kWh: ☀️+🔋 {pct(v['Pe'] + v['Be'], ev)}")
     lines += [
-        f"⚡ Rețea: import {kwh(imp)} · injecție {kwh(inj)} kWh",
-        f"🔋 Baterie: încărcat {kwh(chg)} · descărcat {kwh(dis)} kWh",
+        f"⚡ Import {kwh(imp)} · injecție {kwh(inj)} kWh",
+        f"🔋 Baterie: +{kwh(chg)} / −{kwh(dis)} kWh",
     ]
-    if period != "day":
-        lines.append(f"📉 Pierderi sistem {kwh(loss)} kWh (≈ {_num(loss_w, 0)} W în medie)")
+    if period in ("month", "year"):
+        lines.append(f"📉 Pierderi {kwh(loss)} kWh (≈ {_num(loss_w, 0)} W)")
     lines.append(
-        f"Independență {pct(v['Pc'] + v['Bc'], cons)} · Autoconsum {pct(v['Pc'] + v['Pb'], prod)}"
+        f"Independență {pct(v['Pc'] + v['Bc'], cons)} · autoconsum {pct(v['Pc'] + v['Pb'], prod)}"
     )
     if forecast:
         lines.append(forecast_line(forecast))
-    out["message"] = "\n".join(lines)
+    out["message"] = fit(lines, ("Independență", "📉", "🔋"))  # dropped only if still too long
     return out

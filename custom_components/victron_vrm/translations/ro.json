@@ -50,15 +50,23 @@
     },
     "summary": {
       "name": "Rezumat",
-      "description": "Totalurile de energie pentru o zi, lună sau an, cu un text gata de trimis ca notificare. Fără dată întoarce ultima perioadă încheiată (ieri, luna trecută, anul trecut).",
+      "description": "Totalurile de energie pentru o zi, săptămână (de luni până duminică), lună sau an, cu un text gata de trimis ca notificare. Fără dată întoarce ultima perioadă încheiată (ieri, săptămâna trecută, luna trecută, anul trecut).",
       "fields": {
-        "period": { "name": "Perioadă", "description": "Zi, lună sau an." },
+        "period": { "name": "Perioadă", "description": "Zi, săptămână, lună sau an." },
         "date": { "name": "Dată", "description": "Orice zi din perioadă. Implicit ultima perioadă încheiată." },
+        "config_entry_id": { "name": "Instalație", "description": "Necesar doar cu mai multe instalații VRM." }
+      }
+    },
+    "solar_window": {
+      "name": "Fereastră solară",
+      "description": "Cel mai însorit șir de ore al unei zile după prognoza VRM: soarele peste consumul prognozat al casei, cu un text gata de trimis ca notificare.",
+      "fields": {
+        "date": { "name": "Dată", "description": "Implicit: mâine." },
         "config_entry_id": { "name": "Instalație", "description": "Necesar doar cu mai multe instalații VRM." }
       }
     }
   },
   "selector": {
-    "period": { "options": { "day": "Zi", "month": "Lună", "year": "An" } }
+    "period": { "options": { "day": "Zi", "week": "Săptămână", "month": "Lună", "year": "An" } }
   }
 }

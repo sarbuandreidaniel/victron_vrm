@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"
 
 from victron_vrm.const import CODES  # noqa: E402
 from victron_vrm.history import VrmHistory  # noqa: E402
-from victron_vrm.summary import bounds, default_day, kwh, summarize  # noqa: E402
+from victron_vrm.summary import MESSAGE_MAX, bounds, default_day, kwh, summarize, units  # noqa: E402
 
 
 def vals(**kw):
@@ -58,6 +58,21 @@ def test_day_has_no_losses_and_empty_period():
     assert "Pierderi" not in r["message"] and "Mașina" not in r["message"]
     empty = summarize("year", date(2024, 5, 1), None, 0)
     assert not empty["has_data"] and empty["message"].startswith("Nu există")
+
+
+def test_message_fits_notification():
+    # the 11 Nov 2026 notification was cut at 256 UTF-16 units ("Azi, după progn")
+    nov11 = vals(Pc=3.2, Pb=4.6, Bc=3.5, Gc=28.3, Pe=1.4, Be=1.9, Ge=17.1)
+    fc = {"date": date(2026, 11, 12), "t": [5.2, 30.1, 12.0]}
+    r = summarize("day", date(2026, 11, 11), nov11, 1, forecast=fc)
+    assert units(r["message"]) <= MESSAGE_MAX, (units(r["message"]), r["message"])
+    assert "Independență" in r["message"] and "🔋" in r["message"] and r["message"].endswith("(mașina ~12,0)")
+    # worst case: every line, widest numbers
+    big = vals(Pc=8888, Pb=8888, Pg=8888, Bc=8888, Bg=8888, Gc=8888, Gb=8888, Pe=1, Be=1, Ge=8888)
+    for period, days in (("day", 1), ("month", 31), ("year", 365)):
+        r = summarize(period, date(2026, 10, 5), big, days, forecast={"date": date(2026, 10, 6), "t": [88.8, 88.8, 88.8]})
+        assert units(r["message"]) <= MESSAGE_MAX, (period, units(r["message"]), r["message"])
+        assert r["message"].startswith("☀️ Producție") and "🏠 Casa" in r["message"] and "⚡ Import" in r["message"]
 
 
 def test_history_period():

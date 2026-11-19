@@ -171,6 +171,48 @@ class VrmForecast:
         i = FC_KEYS.index(key)
         return {hh: round(v[i], 3) for hh, v in d["h"].items()} if d else {}
 
+    def solar_window(self, day: date) -> dict[str, Any] | None:
+        d = self.day(day)
+        return solar_window(d["h"]) if d else None
+
     def days(self, start: date, end: date) -> dict[str, Any]:
         lo, hi = start.isoformat(), end.isoformat()
         return {k: v for k, v in self.data["days"].items() if lo <= k <= hi}
+
+
+SURPLUS_MIN = 0.3  # kWh in an hour: below that the hour does not count as sunny surplus
+
+
+def solar_window(hours: dict[str, list[float]]) -> dict[str, Any] | None:
+    """The best run of hours whose forecast solar is above the house's forecast use.
+
+    `hours` is {HH: [solar, consumption, ev]} in kWh; VRM's consumption forecast includes the EV
+    charger, so the house is consumption − ev. Returns the run with the most surplus energy
+    (start and end hour, end exclusive) or None when no hour has SURPLUS_MIN to spare.
+    The battery takes from the same surplus, so it is what the car could get at most.
+    """
+    surplus = {}
+    for hh, v in hours.items():
+        solar, cons, ev = (float(x or 0) for x in (list(v) + [0, 0, 0])[:3])
+        surplus[int(hh)] = max(0.0, solar - max(0.0, cons - ev))
+    best: tuple[float, int, int] | None = None
+    run_start, run_sum = None, 0.0
+    for h in range(25):
+        s = surplus.get(h, 0.0) if h < 24 else 0.0
+        if s >= SURPLUS_MIN:
+            if run_start is None:
+                run_start, run_sum = h, 0.0
+            run_sum += s
+        elif run_start is not None:
+            if best is None or run_sum > best[0]:
+                best = (run_sum, run_start, h)
+            run_start = None
+    if best is None:
+        return None
+    total, start, end = best
+    return {
+        "start": start,
+        "end": end,
+        "surplus_kwh": round(total, 2),
+        "solar_kwh": round(sum(float((hours.get(f"{h:02d}") or [0])[0] or 0) for h in range(start, end)), 2),
+    }
