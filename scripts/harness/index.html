@@ -4,10 +4,10 @@
 
   Serve the repository root and open this page:
       python3 -m http.server 8765 -d integrations/victron_vrm
-      http://localhost:8765/scripts/harness/?view=amortizare      (zi | saptamana | luna | an | masina | baterie | amortizare | setari)
+      http://localhost:8765/scripts/harness/?view=amortizare      (zi | saptamana | luna | an | masina | baterie | invertor | amortizare | setari)
   Optional: &d=2026-07-14 (shown date), &admin=0 (non-admin user), &evfrom=2025-11-01 (first EV day), &ev=charging (charger status for the
   Mașina view: disconnected | connected | charging | charged | waiting_for_sun | overheating_detected | unavailable),
-  &bat=chg | dis | idle (battery state for the Baterie view), &source=gx (Mașina from the charger's meter, victron_vrm/ev_gx), &socfrom=2026-10-01 (first day of SoC statistics).
+  &bat=chg | dis | idle (battery state for the Baterie view), &inv=ess | float | alarm | nogrid (VE.Bus state for the Invertor view), &source=gx (Mașina from the charger's meter, victron_vrm/ev_gx), &socfrom=2026-10-01 (first day of SoC statistics).
 
   The data is generated below by a small deterministic model (7 kW solar, 20 kWh battery, EV charger
   from 2026-10-12 on); it is not real installation data. The fake `hass.callWS` answers the same
@@ -130,6 +130,26 @@
     'sensor.demo_time_left': S(bat === 'dis' ? '5h 47min' : 'Nu se descarca'),
     'sensor.demo_time_to_full': S(bat === 'chg' ? '2h 05min' : 'Nu se incarca'),
   };
+  // sistemul VE.Bus pentru vederea Invertor: trei unități inventate, câte una pe fază, ca în victron_gx
+  {
+    const inv = q.get('inv') || 'ess', P = 'multiplus_ii_48_5000_70_50_id_999', grid = inv !== 'nogrid';
+    const st = { ess: 'bulk', alarm: 'fault', nogrid: 'inverting', float: 'float' }[inv] || 'bulk';
+    const fn = (k) => ({ friendly_name: `MultiPlus-II 48/5000/70-50 (ID: 999) ${k}` });
+    states[`sensor.${P}_state`] = S(st, { ...fn('State'), options: ['off', 'fault', 'bulk', 'absorption', 'float', 'passthrough', 'inverting', 'power_assist'] });
+    states[`select.${P}`] = S('on', { options: ['charger_only', 'inverter_only', 'on', 'off'] });
+    states[`number.${P}_current_limit`] = S(25, { unit_of_measurement: 'A' });
+    const dcP = inv === 'float' ? 120 : -512;
+    Object.assign(states, { [`sensor.${P}_dc_voltage`]: S(51.8), [`sensor.${P}_dc_current`]: S(dcP / 51.8), [`sensor.${P}_dc_power`]: S(dcP), [`sensor.${P}_dc_temperature`]: S(21.4) });
+    for (const k of ['overload', 'low_battery', 'high_temperature', 'ripple', 'high_dc_voltage', 'high_dc_current', 'grid_lost', 'phase_rotation', 'temperature_sensor', 'voltage_sensor'])
+      states[`sensor.${P}_${k}_alarm`] = S(inv === 'alarm' && k === 'overload' ? 'alarm' : inv === 'alarm' && k === 'high_temperature' ? 'warning' : !grid && k === 'grid_lost' ? 'alarm' : 'no_alarm');
+    [[612, 18, -560], [140, 160, 14], [95, 120, 22]].forEach(([out, inp, b], i) => {
+      const l = i + 1, v = 229.4 + i;
+      Object.assign(states, {
+        [`sensor.${P}_input_voltage_l${l}`]: S(grid ? v : 0), [`sensor.${P}_input_power_l${l}`]: S(grid ? inp : 0),
+        [`sensor.${P}_output_voltage_l${l}`]: S(v), [`sensor.${P}_output_power_l${l}`]: S(out), [`sensor.${P}_output_current_l${l}`]: S(out / v * 1.6),
+        [`sensor.${P}_output_frequency_l${l}`]: S(50.02), [`sensor.${P}_output_apparent_power_l${l}`]: S(out * 1.6), [`sensor.${P}_${i}_inverted_power`]: S(b) });
+    });
+  }
   const hass = {
     states, calls: [], user: { is_admin: q.get('admin') !== '0' },
     fin: { investment: 80000, price_import: 1.11, price_export: 0.45 },

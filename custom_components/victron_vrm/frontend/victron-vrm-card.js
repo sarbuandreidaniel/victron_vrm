@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.20.0';
+const VERSION = '0.21.0';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -214,6 +214,107 @@ const BAT_CHARTS = [
 // o durată reală începe cu o cifră („5h 47min”); orice altceva e un mesaj al senzorului
 const isDur = (s) => /^\d/.test(String(s || ''));
 const MONTH_V = ['luna', 'masina', 'baterie'];
+
+// ── invertoarele (vederea Invertor): entitățile VE.Bus din victron_gx, fiecare aparat desenat ca cel real ──
+// paleta modulului Flux (energie-flux.js), ca vederea să arate ca ecranul Flux
+const FX = { bg: '#101f31', edge: '#2f6fae', title: '#c9d4de', unit: '#9a9a9a', lbl: '#8a95a0', fill: '#3f83c8', green: '#76bc4a',
+  arw: '#7ba9d8', track: '#1b3450', red: '#e2606f', sun: '#f7ab3e' };
+// starea VE.Bus, cu aceleași cuvinte ca Flux
+const INV_ST = { off: 'Oprit', low_power: 'Consum redus', fault: 'Eroare', bulk: 'Încărcare bulk', absorption: 'Absorbție', float: 'Menținere',
+  storage: 'Stocare', equalize: 'Egalizare', passthrough: 'Transfer direct', inverting: 'Invertare', power_assist: 'Power assist',
+  power_supply: 'Alimentare', sustain: 'Susținere', sustain_alt: 'Susținere', starting_up: 'Pornire', repeated_absorption: 'Absorbție repetată',
+  auto_equalize: 'Egalizare automată', battery_safe: 'Protecție baterie', external_control: 'Control extern', discharging: 'Descărcare',
+  recharging: 'Reîncărcare', scheduled_recharging: 'Reîncărcare programată' };
+const INV_MODE = { on: 'Pornit', off: 'Oprit', charger_only: 'Doar încărcător', inverter_only: 'Doar invertor' };
+// cele 10 alarme ale sistemului VE.Bus: sensor.<prefix>_<cheie>_alarm = no_alarm / warning / alarm
+const INV_ALARMS = [['overload', 'suprasarcină'], ['low_battery', 'baterie descărcată'], ['high_temperature', 'temperatură'], ['ripple', 'ripple'],
+  ['high_dc_voltage', 'tensiune DC mare'], ['high_dc_current', 'curent DC mare'], ['grid_lost', 'rețea pierdută'], ['phase_rotation', 'rotația fazelor'],
+  ['temperature_sensor', 'senzor de temperatură'], ['voltage_sensor', 'senzor de tensiune']];
+const INV_LED_C = { g: '#47e04e', a: '#ffb21a', r: '#ff4a3d' };
+// textul tipărit pe aparat; Alegreya Sans dacă e instalat, altfel cel mai apropiat font umanist
+const DEV_FONT = "'Alegreya Sans','Trebuchet MS',Roboto,sans-serif";
+// puterea aparatului cum e tipărită: 8000 → 8k, 6500 → 6k5
+const kva = (va) => { const k = Math.floor(va / 1000), r = Math.round((va % 1000) / 100); return r ? `${k}k${r}` : `${k}k`; };
+// semn real: −376, +21
+const sgnW = (v) => (v < -0.5 ? '−' : v > 0.5 ? '+' : '') + F0(Math.abs(v));
+
+// LED-urile panoului, deduse din starea VE.Bus, din alarme și din tensiunea de intrare (victron_gx nu le publică):
+// [eticheta de pe aparat, culoare, 0 stins / 1 aprins / 2 clipește, entitatea din care vine]
+function invLeds(o) {
+  const s = o.state, off = !s || s === 'off' || o.mode === 'off', fault = s === 'fault' ? 2 : 0;
+  const al = (k) => (o.alarms[k] === 'alarm' ? 1 : o.alarms[k] === 'warning' ? 2 : 0) || fault;
+  const L = (lbl, c, on, e) => [lbl, c, off && !fault ? 0 : on, e];
+  return {
+    charger: [
+      L('mains on', 'g', o.mains ? 1 : 0, o.ent.mains),
+      L('bulk', 'a', s === 'bulk' ? 1 : s === 'battery_safe' ? 2 : 0, o.ent.state),
+      L('absorption', 'a', s === 'absorption' || s === 'repeated_absorption' ? 1 : s === 'equalize' || s === 'auto_equalize' ? 2 : 0, o.ent.state),
+      L('float', 'a', s === 'float' || s === 'storage' ? 1 : 0, o.ent.state)],
+    inverter: [
+      L('inverter on', 'g', ['inverting', 'power_assist', 'discharging'].includes(s) || (!o.mains && !fault) ? 1 : 0, o.ent.state),
+      L('overload', 'r', al('overload'), o.ent.alarm + 'overload_alarm'),
+      L('low battery', 'r', al('low_battery'), o.ent.alarm + 'low_battery_alarm'),
+      L('temperature', 'r', al('high_temperature'), o.ent.alarm + 'high_temperature_alarm')],
+  };
+}
+// fereastra neagră cu LED-uri; s = scara, u = sufixul id-urilor din SVG
+function invLedWin(x, y, w, h, s, leds, u) {
+  let o = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${4 * s}" fill="#0b0b0c" stroke="#2a2a2a" stroke-width="${0.6 * s}"/>`;
+  const cw = w / 2, top = y + 15 * s, row = (h - 22 * s) / 4;
+  ['charger', 'inverter'].forEach((k, ci) => {
+    const cx = x + 9 * s + ci * cw;
+    o += `<text x="${cx}" y="${top}" fill="#e8e8e8" font-size="${11 * s}" font-weight="500">${k}</text>`;
+    leds[k].forEach(([lbl, c, on, e], i) => {
+      const ly = top + 8 * s + row * (i + 0.55), lit = on > 0, txt = `${lbl}: ${on === 2 ? 'clipește' : lit ? 'aprins' : 'stins'}`;
+      o += `<g${e ? ` data-e="${esc(e)}" tabindex="0" role="button" aria-label="${txt}"` : ''}><title>${txt}</title>`
+        + `<rect x="${cx - 4 * s}" y="${ly - 5 * s}" width="${cw - 10 * s}" height="${10 * s}" fill="transparent"/>`
+        + `<g${on === 2 ? ' class="bk"' : ''}>${lit ? `<circle cx="${cx + 3 * s}" cy="${ly}" r="${7 * s}" fill="url(#ig${c}${u})"/>` : ''}`
+        + `<circle cx="${cx + 3 * s}" cy="${ly}" r="${2.7 * s}" fill="${lit ? INV_LED_C[c] : '#4d4b46'}"/>`
+        + `${lit ? `<circle cx="${cx + 2.4 * s}" cy="${ly - 0.7 * s}" r="${0.9 * s}" fill="#fff" opacity=".85"/>` : ''}</g>`
+        + `<text x="${cx + 10 * s}" y="${ly + 2.4 * s}" fill="#d6d6d6" font-size="${6.6 * s}">${lbl}</text></g>`;
+    });
+  });
+  const d = ['g', 'a', 'r'].map((c) => `<radialGradient id="ig${c}${u}"><stop offset="0" stop-color="${INV_LED_C[c]}" stop-opacity=".75"/><stop offset="1" stop-color="${INV_LED_C[c]}" stop-opacity="0"/></radialGradient>`).join('');
+  return `<defs>${d}</defs>${o}`;
+}
+// aparatul întreg, după fotografia unui MultiPlus-II (viewBox 460 × 900); m = modelul, ph = faza scrisă pe capac
+function invDevice(m, leds, ph, u) {
+  const spec = isFinite(m.v) && isFinite(m.va) ? `<text x="30" y="479" fill="#fff" font-size="11" font-weight="700">${m.v}<tspan font-size="5" dy="-1">V</tspan><tspan dy="1"> | ${kva(m.va)}</tspan><tspan font-size="5" dy="-1">VA</tspan>`
+    + `${isFinite(m.a) ? `<tspan dy="1"> | ${m.a}</tspan><tspan font-size="5" dy="-1">A</tspan>` : ''}</text>` : '';
+  const ac = isFinite(m.tr) ? `<text x="30" y="490" fill="#eef7fc" font-size="5.4">AC transfer capacity: ${m.tr}A  |  Inverter 230V</text>` : '';
+  const corner = (x, side, y0, y1) => `<path d="M${x} ${y0 + 4} q0 -4 4 -4 H${x + 61} q4 0 4 4 V${y1 - 8} q0 8 -8 8 H${x + 8} q-8 0 -8 -8z" fill="url(#co${u})"/>`
+    + `<path d="M${x + 4} ${y0 + 1} H${x + 61}" stroke="#55585b" stroke-width="1.5"/><path d="M${side ? x + 3 : x + 62} ${y0 + 4} V${y1 - 2}" stroke="#1a1b1c" stroke-width="2"/>`;
+  return `<svg viewBox="0 0 460 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(m.name)}${ph ? ' ' + ph : ''}" font-family="${DEV_FONT}">
+<defs><linearGradient id="bo${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3aa3da"/><stop offset=".22" stop-color="#1d9bd6"/><stop offset=".6" stop-color="#0397d5"/><stop offset="1" stop-color="#028fcb"/></linearGradient>
+<linearGradient id="ca${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#46484b"/><stop offset="1" stop-color="#2b2d30"/></linearGradient>
+<linearGradient id="cv${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3c3f42"/><stop offset="1" stop-color="#323436"/></linearGradient>
+<linearGradient id="co${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#36383a"/><stop offset="1" stop-color="#25272a"/></linearGradient></defs>
+<path d="M8 16 q0 -4 4 -4 H448 q4 0 4 4 V782 H8z" fill="url(#bo${u})"/>
+<rect x="8" y="80" width="3" height="700" fill="#0679b8" opacity=".55"/><rect x="449" y="80" width="3" height="700" fill="#0679b8" opacity=".55"/>
+${[261, 468, 722].map((y) => `<rect x="3" y="${y}" width="6" height="12" rx="1.5" fill="#1b1d1f"/><rect x="451" y="${y}" width="6" height="12" rx="1.5" fill="#1b1d1f"/>`).join('')}
+${[[1, 0], [391, 1]].map(([x, r]) => `<rect x="${x}" y="2" width="68" height="75" rx="6" fill="url(#ca${u})"/><rect x="${x + 6}" y="8" width="56" height="62" rx="3" fill="#2c2e31"/>`
+    + `<path d="M${x + 5} 3.5 H${x + 63}" stroke="#6a6d70" stroke-width="1.4"/><path d="M${r ? x + 2 : x + 66} 8 V72" stroke="#1d1e20" stroke-width="2"/>`).join('')}
+<g transform="translate(30 118)" fill="#fff" font-family="Helvetica,Arial,sans-serif"><circle cx="12" cy="10" r="11" fill="none" stroke="#fff" stroke-width="2"/>
+<path d="M4 10 q4 -7 8 0 t8 0" fill="none" stroke="#fff" stroke-width="1.6"/><text x="29" y="15" font-size="15" font-weight="500">victron energy</text>
+<text x="30" y="24" font-size="5" letter-spacing="2" opacity=".8">BLUE POWER</text></g>
+<rect x="19" y="411" width="419" height="23" fill="#f25f45"/>
+<text x="432" y="426.5" text-anchor="end" fill="#fff3ee" font-size="6.5" font-family="Helvetica,Arial,sans-serif">www.victronenergy.com</text>
+<line x1="19" y1="440" x2="438" y2="440" stroke="#bfe3f6" stroke-width=".8"/>
+<text x="30" y="463" fill="#fff" font-size="21" font-weight="700" letter-spacing=".2">${esc(m.name)}</text>${spec}${ac}
+<g transform="translate(401 456)"><rect width="23" height="23" fill="#fff"/><path d="M2 2h7v7H2zM14 2h7v7h-7zM2 14h7v7H2zM12 12h3v3h-3zM16 16h5v5h-5zM14 19h2v2h-2zM11 5h2v2h-2z" fill="#111"/></g>
+<line x1="19" y1="496" x2="438" y2="496" stroke="#bfe3f6" stroke-width=".8"/>
+<text x="432" y="510" text-anchor="end" fill="#f2f9fd" font-size="8" font-family="Helvetica,Arial,sans-serif">⚠  ▣  CE  ♺  IP21</text>
+${invLedWin(42, 526, 159, 75, 1.1, leds, u)}
+<g stroke="#eef7fc" stroke-width=".9" fill="none" opacity=".9"><rect x="332" y="530" width="30" height="46"/><path d="M318 540h14M362 534h16M362 548h16M347 524v6M347 576v14M336 590h22v9h-22z"/>
+<rect x="339" y="537" width="16" height="12"/><path d="M339 556 L355 570 M339 570 L355 556"/></g>
+<g fill="#e6f4fb" opacity=".7">${[0, 1, 2, 3, 4, 5].map((i) => `<rect x="250" y="${724 + i * 6.5}" width="${i === 5 ? 50 : 181}" height="2.2"/>`).join('')}</g>
+<rect x="8" y="780" width="444" height="2" fill="#05476e"/><rect x="9" y="782" width="442" height="104" fill="url(#cv${u})"/><rect x="9" y="782" width="442" height="1.5" fill="#55595c" opacity=".7"/>
+<rect x="66" y="868" width="328" height="28" fill="#26282a"/>
+${Array.from({ length: 37 }, (_, i) => `<path d="M${70 + i * 8.75} 893 V878 q0 -2.5 2.5 -2.5 h0.6 q2.5 0 2.5 2.5 V893z" fill="#0a0a0a"/>`).join('')}
+<rect x="66" y="893" width="328" height="3" fill="#2a2c2e"/>${corner(1, 0, 820, 898)}${corner(394, 1, 820, 898)}
+${ph ? `<rect x="168" y="20" width="124" height="44" rx="8" fill="${FX.bg}" stroke="${FX.edge}" stroke-width="2.5"/><text x="230" y="51" text-anchor="middle" fill="#fff" font-size="26" font-weight="500" font-family="Roboto,Helvetica,sans-serif">${ph}</text>` : ''}
+</svg>`;
+}
 
 // starea de încărcare pe zile: bară de la minim la maxim, linie la medie; aceleași zone de hover ca barChart
 function rangeChart(W, H, rows, o) {
@@ -514,6 +615,44 @@ details.box.cd.tbl{margin-top:0;padding-top:16px;border-top:1px solid ${C.border
 .fld .h{font-size:13px;color:${C.muted};line-height:1.4}
 .lims .fld{align-content:start}
 button:focus-visible{outline:2px solid ${C.focus};outline-offset:2px}
+.inv{display:grid;gap:12px;container:inv/inline-size}
+.ifx{background:${FX.bg};border:2px solid ${FX.edge};border-radius:8px;padding:14px 16px;color:#fff;font-variant-numeric:tabular-nums;min-width:0}
+.inv .ttl{color:${FX.title};font-size:18px;font-weight:400}
+.inv .ifx .note{color:${FX.lbl};margin:2px 0 0}
+.ipill{display:inline-flex;align-items:center;gap:8px;border:1px solid ${FX.lbl};border-radius:999px;padding:4px 12px;font-size:14px;color:${FX.title};flex-shrink:0;max-width:60%}
+.ipill i{width:8px;height:8px;border-radius:50%;background:${FX.lbl};flex:none}
+.ipill.on{border-color:${FX.green}}.ipill.on i{background:${FX.green}}
+.ipill.dis{border-color:${FX.fill}}.ipill.dis i{background:${FX.fill}}
+.ipill.warn{border-color:${FX.sun}}.ipill.warn i{background:${FX.sun}}
+.ipill.bad{border-color:${FX.red}}.ipill.bad i{background:${FX.red}}
+.inv-g{display:grid;grid-template-columns:repeat(var(--n,3),minmax(0,1fr));gap:18px}
+.inv-c{display:flex;flex-direction:column;gap:10px;min-width:0}
+.inv-dev{width:66%;max-width:200px;margin:0 auto}
+.inv-dev svg{display:block;width:100%;height:auto}
+.inv-dev .bk{animation:invbk 1.3s steps(1) infinite}
+@keyframes invbk{50%{opacity:.12}}
+.iph .tp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;color:${FX.title}}
+.iph .tp b{font-size:16px;font-weight:500;color:#fff}
+.ifl{display:flex;justify-content:space-between;align-items:flex-end;gap:6px;margin:6px 0 8px}
+.ifl .ar{color:${FX.arw};font-size:16px;padding-bottom:4px}
+.ifl .r{text-align:right}
+.ilb{font-size:12px;color:${FX.lbl}}
+.imd{font-size:20px;white-space:nowrap}
+.imd small{font-size:13px;color:${FX.unit};margin-left:2px}
+.itr{height:6px;background:${FX.track};border-radius:3px;overflow:hidden}
+.itr i{display:block;height:100%;background:${FX.fill};border-radius:3px}
+.ikv{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:${FX.title};padding:5px 0;border-bottom:1px solid ${FX.track}}
+.ikv:last-child{border-bottom:0}
+.ikv span:first-child{color:${FX.lbl}}
+.inv-s{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.inv-x{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:13px;color:${FX.lbl};margin-top:12px;padding-top:10px;border-top:1px solid ${FX.track}}
+.inv-x b{font-weight:400;color:${FX.title}}
+.inv [data-e]{cursor:pointer}
+.inv [data-e]:focus-visible{outline:2px solid ${C.focus};outline-offset:2px;border-radius:4px}
+.inote{font-size:12px;color:${C.muted};line-height:1.45}
+@container inv (max-width:760px){.inv-g{gap:8px}.inv-c .ifx{padding:10px 8px}.iph .tp span{display:none}.ifl{flex-direction:column;align-items:flex-start;gap:4px}
+.ifl .r{text-align:left}.ifl .ar{display:none}.ikv{flex-direction:column;gap:0;font-size:12px}.imd{font-size:16px}.inv-s{grid-template-columns:1fr 1fr}.inv-dev{width:84%}
+.inv .hd{flex-wrap:wrap}.ipill{max-width:100%;white-space:normal}}
 @media (max-width:700px){
 .sum{grid-template-columns:1fr auto;gap:0 12px}
 .sum .r{grid-column:1/-1;margin:2px 0 16px}.sum .r:last-child{margin-bottom:0}
@@ -538,8 +677,8 @@ class VictronVrmCard extends HTMLElement {
     }
   }
   setConfig(config) {
-    const view = VIEWS.includes(config.view) || ['setari', 'amortizare', 'masina', 'baterie'].includes(config.view) ? config.view : 'zi';
-    this._cfg = { ...config, view, paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an', masina: 'masina', baterie: 'baterie', amortizare: 'amortizare', setari: 'setari', ...(config.paths || {}) } };
+    const view = VIEWS.includes(config.view) || ['setari', 'amortizare', 'masina', 'baterie', 'invertor'].includes(config.view) ? config.view : 'zi';
+    this._cfg = { ...config, view, paths: { zi: 'zi', saptamana: 'saptamana', luna: 'luna', an: 'an', masina: 'masina', baterie: 'baterie', invertor: 'invertor', amortizare: 'amortizare', setari: 'setari', ...(config.paths || {}) } };
     this._cache = new Map();
     // la upgrade, setConfig vine după connectedCallback și după hass
     if (this._hass && this._d) this._load();
@@ -571,7 +710,7 @@ class VictronVrmCard extends HTMLElement {
     this._load();
   }
   disconnectedCallback() {
-    clearInterval(this._timer); this._closeFs();
+    clearInterval(this._timer); this._closeFs(); clearTimeout(this._invT); this._invT = null;
     window.removeEventListener(FZ_EVENT, this._onFz);
     window.removeEventListener('storage', this._onFz);
     window.removeEventListener(FIN_EVENT, this._onFin);
@@ -583,6 +722,7 @@ class VictronVrmCard extends HTMLElement {
     else if (this._settings()) this._syncAuto();
     else if (this._cfg && this._cfg.view === 'masina') this._syncLive();
     else if (this._cfg && this._cfg.view === 'baterie') this._syncBat();
+    else if (this._cfg && this._cfg.view === 'invertor') this._syncInv();
   }
   get hass() { return this._hass; }
   _settings() { return this._cfg && this._cfg.view === 'setari'; }
@@ -668,6 +808,8 @@ class VictronVrmCard extends HTMLElement {
       try { this._info = await this._ws({ type: 'victron_vrm/info' }, true); this._err = null; } catch (e) { this._err = e && e.message ? e.message : String(e); }
       return this._renderSettings();
     }
+    // invertoarele citesc doar stările din HA, nu istoricul VRM
+    if (this._cfg.view === 'invertor') { this._invH = null; return this._renderInv(); }
     if (this._cfg.view === 'masina') {
       const seq = (this._seq = (this._seq || 0) + 1), { from, to } = this._range(), t = today();
       if (refresh && !(from <= t && t <= to)) return;
@@ -1671,6 +1813,101 @@ ${yrows ? `<div class="box"><div class="ttl">Pe ani</div><div class="note">Apas�
     const f = (this._info && this._info.finance) || {};
     const list = priceList(f), cur = list[list.length - 1] || {};
     return { inv: f.investment, list, P: cur.import, PI: cur.export };
+  }
+  // ── invertoarele: câte un MultiPlus pe fază, desenat ca aparatul real, cu valorile fazei lui ──
+  // prefixul entităților VE.Bus: `vebus:` din configurație, altfel primul senzor de stare VE.Bus găsit
+  _invPrefix() {
+    if (this._cfg.vebus) return this._cfg.vebus;
+    if (this._invP) return this._invP;
+    const st = this._hass.states;
+    const k = Object.keys(st).find((id) => /^sensor\..+_state$/.test(id) && ((st[id].attributes || {}).options || []).includes('passthrough')
+      && st[id.replace(/_state$/, '_dc_voltage')]);
+    return (this._invP = k ? k.slice(7, -6) : null);
+  }
+  _invData() {
+    const p = this._invPrefix(); if (!p) return null;
+    const st = this._hass.states, e = (d, k) => `${d}.${p}${k ? '_' + k : ''}`;
+    const N = (id) => { const x = st[id]; const n = x ? parseFloat(x.state) : NaN; return isFinite(n) ? n : NaN; };
+    const S = (id) => (st[id] ? st[id].state : null);
+    const stE = e('sensor', 'state');
+    if (!st[stE]) return null;
+    // modelul din numele senzorului: „MultiPlus-II 48/8000/110-100 (ID: 276) State”
+    const fn = (st[stE].attributes || {}).friendly_name || '', mm = fn.match(/^(.*?)\s*(\d+)\/(\d+)\/(\d+)-(\d+)/);
+    const m = { name: (mm && mm[1].trim()) || 'MultiPlus-II', v: mm ? +mm[2] : NaN, va: +this._cfg.rating > 0 ? +this._cfg.rating : mm ? +mm[3] : NaN, a: mm ? +mm[4] : NaN, tr: mm ? +mm[5] : NaN };
+    const alarms = {}; for (const [k] of INV_ALARMS) alarms[k] = S(e('sensor', `${k}_alarm`));
+    // câte o unitate pe fază: unitatea n (0, 1, 2) e pe faza L(n+1)
+    const ph = [1, 2, 3].filter((l) => st[e('sensor', `output_power_l${l}`)]).map((l) => ({
+      l, inV: N(e('sensor', `input_voltage_l${l}`)), inP: N(e('sensor', `input_power_l${l}`)), outP: N(e('sensor', `output_power_l${l}`)),
+      outV: N(e('sensor', `output_voltage_l${l}`)), outA: N(e('sensor', `output_current_l${l}`)), hz: N(e('sensor', `output_frequency_l${l}`)),
+      va: N(e('sensor', `output_apparent_power_l${l}`)), bat: N(e('sensor', `${l - 1}_inverted_power`)),
+      ent: { in: e('sensor', `input_power_l${l}`), out: e('sensor', `output_power_l${l}`), va: e('sensor', `output_apparent_power_l${l}`), bat: e('sensor', `${l - 1}_inverted_power`), inV: e('sensor', `input_voltage_l${l}`) } }));
+    return { p, m, ph, alarms, state: S(stE), mode: S(e('select')), limit: N(e('number', 'current_limit')),
+      dcV: N(e('sensor', 'dc_voltage')), dcA: N(e('sensor', 'dc_current')), dcP: N(e('sensor', 'dc_power')), temp: N(e('sensor', 'dc_temperature')),
+      ent: { state: stE, mode: e('select'), alarm: `sensor.${p}_`, dcV: e('sensor', 'dc_voltage'), dcP: e('sensor', 'dc_power'), temp: e('sensor', 'dc_temperature'), limit: e('number', 'current_limit') } };
+  }
+  _invHtml() {
+    const D = this._invData();
+    if (!D) return `<div class="box msg">Nu găsesc un sistem VE.Bus (integrarea victron_gx). Adaugă în configurația cardului <code>vebus:</code> cu prefixul entităților, de exemplu <code>multiplus_ii_48_8000_110_100_id_276</code>.</div>`;
+    const m = D.m, n = D.ph.length, f = (v, fmt = F0) => (isFinite(v) ? fmt(v) : '—');
+    const click = (id) => (id ? ` data-e="${esc(id)}" tabindex="0" role="button"` : '');
+    const mains = D.ph.some((x) => x.inV > 180);
+    const bad = INV_ALARMS.filter(([k]) => D.alarms[k] === 'alarm'), warn = INV_ALARMS.filter(([k]) => D.alarms[k] === 'warning');
+    const names = (l) => l.map(([, t]) => t).join(', ');
+    const off = D.state === 'off' || D.mode === 'off';
+    const pill = bad.length ? ['bad', `Alarmă: ${names(bad)}`] : warn.length ? ['warn', `Avertizare: ${names(warn)}`] : off ? ['', 'Oprit']
+      : !mains ? ['dis', 'Fără rețea · pe baterie'] : D.dcP > 25 ? ['on', 'Se încarcă bateria'] : D.dcP < -25 ? ['dis', 'Bateria alimentează casa'] : ['', 'În repaus'];
+    const model = `${n > 1 ? `${n} × ` : ''}${esc(m.name)}${isFinite(m.va) ? ` ${m.v}/${m.va}/${m.a}-${m.tr}` : ''}`;
+    const head = `<div class="ifx"><div class="hd"><div><div class="ttl">Invertoare</div><div class="note">${model} · un sistem VE.Bus</div></div>
+      <span class="ipill${pill[0] ? ' ' + pill[0] : ''}"><i></i>${esc(pill[1])}</span></div></div>`;
+    const cols = D.ph.map((x, i) => {
+      const leds = invLeds({ state: D.state, mode: D.mode, alarms: D.alarms, mains: x.inV > 180, ent: { mains: x.ent.inV, state: D.ent.state, alarm: D.ent.alarm } });
+      // victron_gx dă uneori puterea aparentă mai mică decât cea activă (32 VA la 418 W): luăm cea mai mare dintre ele
+      const lv = Math.max(isFinite(x.va) ? x.va : 0, isFinite(x.outP) ? Math.abs(x.outP) : 0), load = m.va > 0 && (isFinite(x.va) || isFinite(x.outP)) ? lv / m.va * 100 : NaN, exp = x.inP < -10;
+      return `<div class="inv-c"><div class="inv-dev">${invDevice(m, leds, n > 1 ? `L${x.l}` : '', `${i}`)}</div>
+      <div class="ifx iph"><div class="tp"><b>L${x.l}</b><span>${f(x.outV, F1)} V · ${f(x.outA, F1)} A · ${f(x.hz, F2)} Hz</span></div>
+       <div class="ifl"><div${click(x.ent.in)}><div class="ilb">${exp ? 'spre rețea' : 'din rețea'}</div><div class="imd" style="color:${FX.green}">${f(Math.abs(x.inP))}<small>W</small></div></div>
+        <div class="ar" aria-hidden="true">${exp ? '←' : '→'}</div>
+        <div class="r"${click(x.ent.out)}><div class="ilb">spre casă</div><div class="imd">${f(x.outP)}<small>W</small></div></div></div>
+       <div class="itr" role="img" aria-label="Sarcina L${x.l}: ${f(load)}%"><i style="width:${isFinite(load) ? Math.min(100, load) : 0}%"></i></div>
+       <div class="ikv" style="margin-top:6px"${click(x.ent.va)}><span>sarcină</span><span>${f(load)}% din ${isFinite(m.va) ? F0(m.va) : '—'} VA</span></div>
+       ${isFinite(x.bat) ? `<div class="ikv"${click(x.ent.bat)}><span>baterie</span><span style="color:${FX.fill}">${sgnW(x.bat)} W</span></div>` : ''}</div></div>`;
+    }).join('');
+    const al = bad.length + warn.length;
+    const sum = `<div class="ifx"><div class="inv-s">
+      <div${click(D.ent.state)}><div class="ilb">Stare</div><div class="imd" style="color:${D.state === 'fault' ? FX.red : FX.sun}">${esc(INV_ST[D.state] || D.state || '—')}</div></div>
+      <div${click(D.ent.dcV)}><div class="ilb">Baterie (DC)</div><div class="imd">${f(D.dcV, F2)}<small>V</small> ${isFinite(D.dcA) ? (D.dcA < 0 ? '−' : '') + F1(Math.abs(D.dcA)) : '—'}<small>A</small></div></div>
+      <div${click(D.ent.dcP)}><div class="ilb">Putere baterie</div><div class="imd" style="color:${FX.fill}">${isFinite(D.dcP) ? sgnW(D.dcP) : '—'}<small>W</small></div></div>
+      <div><div class="ilb">Alarme</div><div class="imd" style="color:${al ? (bad.length ? FX.red : FX.sun) : FX.green}">${al} / ${INV_ALARMS.length}</div></div></div>
+      <div class="inv-x"><span${click(D.ent.mode)}>Mod <b>${esc(INV_MODE[D.mode] || D.mode || '—')}</b></span><span${click(D.ent.limit)}>Limită intrare <b>${f(D.limit)} A</b></span>
+       <span${click(D.ent.temp)}>Temperatură <b>${f(D.temp, F1)} °C</b></span><span>Alarme <b>${al ? esc(names([...bad, ...warn])) : 'toate în regulă'}</b></span></div></div>`;
+    // în ESS starea rămâne „bulk” și cât timp bateria se descarcă: o spunem, ca LED-ul să nu păcălească
+    const ess = D.state === 'bulk' && D.dcP < -25 ? ' În ESS starea rămâne „bulk” și când bateria se descarcă; sensul îl arată puterea bateriei.' : '';
+    return `<div class="inv">${head}<div class="inv-g" style="--n:${n || 1}">${cols}</div>${sum}
+     <div class="inote">LED-urile sunt deduse din starea VE.Bus, din alarme și din tensiunea de intrare.${ess} Un clic pe un LED sau pe o valoare deschide senzorul.</div></div>`;
+  }
+  // HA trimite `hass` la fiecare schimbare; redesenăm cel mult o dată la 1,5 s și doar dacă s-a schimbat ceva
+  _syncInv() {
+    if (this._invT) return;
+    this._invT = setTimeout(() => { this._invT = null; this._renderInv(); }, Math.max(0, 1500 - (Date.now() - (this._invAt || 0))));
+  }
+  _renderInv() {
+    const w = this.shadowRoot && this.shadowRoot.querySelector('.w'); if (!w || !this._hass) return;
+    const html = this._invHtml(); this._invAt = Date.now();
+    if (html === this._invH && w.querySelector('.inv')) return;
+    // un element cu focus își păstrează focusul după redesenare
+    const a = this.shadowRoot.activeElement, fk = a && a.dataset ? a.dataset.e : null;
+    this._invH = html; w.innerHTML = html;
+    if (fk) { const b = w.querySelector(`[data-e="${window.CSS.escape(fk)}"]`); if (b) b.focus(); }
+    if (!this._invW) {
+      this._invW = true;
+      const open = (ev) => {
+        const t = ev.target.closest && ev.target.closest('[data-e]');
+        if (!t || this._cfg.view !== 'invertor') return;
+        if (ev.type === 'keydown') { if (ev.key !== 'Enter' && ev.key !== ' ') return; ev.preventDefault(); }
+        this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId: t.dataset.e }, bubbles: true, composed: true }));
+      };
+      w.addEventListener('click', open); w.addEventListener('keydown', open);
+    }
   }
   _renderPay() {
     const w = this.shadowRoot && this.shadowRoot.querySelector('.w'); if (!w) return;
