@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.21.3';
+const VERSION = '0.21.4';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -448,6 +448,7 @@ const RAW_CSS = `
 .sum .p b{color:${C.fg};font-weight:500;font-variant-numeric:tabular-nums}
 .sum .p i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:0}
 .sum .fl{background:#5c5c5c}
+.sum .yb .bar{margin-bottom:3px}.sum .yb .bar+.p{margin-top:5px}
 .sum .p i.gp{background:${C.grid};box-shadow:inset 0 0 0 1px #5c5c5c}
 h2{font-size:18px;font-weight:500;margin:10px 0 0;color:${C.fg}}
 h2 small{font-weight:400;color:${C.muted};font-size:14px;margin-left:8px}
@@ -1044,18 +1045,31 @@ class VictronVrmCard extends HTMLElement {
     return `${head}<div class="note">Din kilometrajul mașinii, ținut minte de integrare din ${firstTxt}; mașina e hibridă, deci kilometrii includ și drumurile pe benzină și cifrele pe 100 km sunt orientative</div>
  <div class="kpis" style="--k:3;margin-top:12px">${k('Parcurși', F0(km), 'km', span)}${k('Curent pe 100 km', km > 0 ? F1(e / km * 100) : '—', 'kWh', `${kwh(e)} kWh primiți de mașină`)}${k('Cost pe 100 km', km > 0 && ok ? F2(cost / km * 100) : '—', 'lei', 'doar curentul luat din rețea')}</div></div>`;
   }
-  // rândul „Față de anul trecut” din rezumat: aceleași zile, schimbarea în procente și câștigul în lei
-  _yoyRow() {
+  // caseta „Față de anul trecut”: aceleași zile încheiate, anul acesta lângă anul trecut;
+  // schimbarea e valoarea rândului, barele (plin = acum, gri = anul trecut) și legenda dau cifrele
+  _yoyHtml() {
     const y = this._px && this._px.yoy; if (!y) return '';
     const a = sum(y.ly), b = sum(y.ty), pl = this._prices();
-    const ch = (x, z) => (z > 0.05 ? (x >= z ? '+' : '−') + F0(Math.abs(x - z) / z * 100) + '%' : '—');
-    const span = y.from.getFullYear() === y.to.getFullYear() && y.from.getMonth() === y.to.getMonth()
-      ? `${y.from.getDate()}–${y.to.getDate()} ${LUNI[y.to.getMonth()]} ${y.to.getFullYear()}`
-      : `${y.from.getDate()} ${LUNI[y.from.getMonth()]} – ${y.to.getDate()} ${LUNI[y.to.getMonth()]} ${y.to.getFullYear()}`;
-    const g = pl ? y.ty.reduce((s, r) => s + (r.gain || 0), 0) - y.ly.reduce((s, r) => s + (r.gain || 0), 0) : NaN;
-    const txt = [`producție <b>${ch(b.prod, a.prod)}</b>`, `consum <b>${ch(b.cons, a.cons)}</b>`, `import <b>${ch(b.imp, a.imp)}</b>`];
-    if (isFinite(g)) txt.push(`câștig <b>${g >= 0 ? '+' : '−'}${lei(Math.abs(g))}</b> lei`);
-    return sumRow('Față de anul trecut', `<small style="font-size:12px">${esc(span)}</small>`, [], txt);
+    const y0 = y.from.getFullYear(), y1 = y0 + 1;
+    const dm = (d, yr) => `${d.getDate()} ${LUNI[d.getMonth()]}${yr ? ' ' + yr : ''}`;
+    const span = (yr) => (y.from.getMonth() === y.to.getMonth() && y.from.getFullYear() === y.to.getFullYear()
+      ? `${y.from.getDate()}–${dm(y.to, yr)}` : `${dm(y.from)} – ${dm(y.to, yr)}`);
+    const row = (k, x, z, u, f, ex = []) => {
+      const m = Math.max(x, z, 0);
+      const n = z > 0.05 ? `${x >= z ? '+' : '−'}${F0(Math.abs(x - z) / z * 100)}<small>%</small>` : '—';
+      const bar = (v, c) => `<div class="bar"><span style="flex:${m > 0 ? (Math.max(0, v) / m).toFixed(4) : 0} 0 0;background:${c}"></span></div>`;
+      const p = `<span><i style="background:${C.soft}"></i><b>${f(x)} ${u}</b> ${y1}</span><span><i class="fl"></i><b>${f(z)} ${u}</b> ${y0}</span>`
+        + ex.map((t) => `<span>${t}</span>`).join('');
+      return `<div class="k">${k}</div><div class="n">${n}</div><div class="r yb">${bar(x, C.soft)}${bar(z, '#5c5c5c')}<div class="p">${p}</div></div>`;
+    };
+    let h = row('Producție', b.prod, a.prod, 'kWh', kwh)
+      + row('Consum', b.cons, a.cons, 'kWh', kwh, b.ev - a.ev >= 0.05 ? [`din care mașina <b>${kwh(b.ev)} kWh</b>${a.ev >= 0.05 ? ` (${kwh(a.ev)} kWh)` : ''}`] : [])
+      + row('Import rețea', b.imp, a.imp, 'kWh', kwh);
+    if (pl) {
+      const gx = y.ty.reduce((s, r) => s + (r.gain || 0), 0), gz = y.ly.reduce((s, r) => s + (r.gain || 0), 0);
+      if (isFinite(gx) && isFinite(gz)) h += row('Câștig', gx, gz, 'lei', lei, [`<b>${gx >= gz ? '+' : '−'}${lei(Math.abs(gx - gz))} lei</b> diferență`]);
+    }
+    return `<div class="box"><div class="ttl">Față de anul trecut</div><div class="note">Aceleași zile încheiate: ${esc(span(y1))} față de ${esc(span(y0))}${pl ? '; câștigul fiecărei zile la prețul lunii ei' : ''}</div><div class="sum">${h}</div></div>`;
   }
 
   // ── desen ───────────────────────────────────────────────────────────
@@ -1099,7 +1113,7 @@ class VictronVrmCard extends HTMLElement {
       + sumRow(hasEv ? 'Casă' : 'Consum', kwU(tot.house), [[tot.v.hPc, FLOW.Pc, 'solar'], [tot.v.hBc, FLOW.Bc, 'baterie'], [tot.v.hGc, FLOW.Gc, 'rețea']])
       + (hasEv ? sumRow('Mașina', kwU(tot.ev), [[tot.v.Pe, FLOW.Pc, 'solar'], [tot.v.Be, FLOW.Bc, 'baterie'], [tot.v.Ge, FLOW.Gc, 'rețea']]) : '')
       + (pl ? sumRow('Câștig', leiU(tot.gain), [[tot.v.eco, FLOW.eco, 'din autoconsum'], [tot.v.injv, FLOW.injv, 'din injecție']], v === 'zi' ? [] : [`Ø <b>${leiS(tot.gain / n)}</b> lei/${unit}`]) : '')
-      + this._yoyRow() + this._fcTake(rows, tot) + '</div>';
+      + this._fcTake(rows, tot) + '</div>';
 
     const first = { zi: 'Ora', saptamana: 'Ziua', luna: 'Ziua', an: 'Luna' }[v];
     const cols = (r) => `<td>${kwh(r.prod)}</td><td>${kwh(r.house)}</td>${hasEv ? `<td>${kwh(r.ev)}</td>` : ''}<td>${kwh(r.imp)}</td><td>${kwh(r.inj)}</td><td class="hn">${kwh(r.chg)}</td><td class="hn">${kwh(r.dis)}</td><td>${pctN(r.indep)}</td><td class="hn">${pctN(r.autoc)}</td>${pl ? `<td>${r.any || r === tot ? leiS(r.gain) : ''}</td>` : ''}`;
@@ -1121,6 +1135,7 @@ class VictronVrmCard extends HTMLElement {
     const nk = 6 + (showLoss ? 1 : 0);
     w.innerHTML = nav + `
 <div class="kpis${nk % 2 ? ' odd' : ''}" style="--k:${nk}">${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', v === 'zi' ? `${kwh(tot.v.Bg)} kWh în rețea` : avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pctN(tot.indep), isFinite(tot.indep) ? '%' : '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pctN(tot.autoc), isFinite(tot.autoc) ? '%' : '', 'producție folosită în casă sau baterie')}</div>
+${this._yoyHtml()}
 <div class="charts">${charts.map(box).join('')}</div>
 ${v === 'luna' ? this._heatHtml() : ''}
 ${pl ? this._cashHtml(rows, tot, hasEv, cashCh) : ''}
