@@ -42,7 +42,7 @@ The EV charger sits on the AC output, so `Pe ≤ Pc`, `Be ≤ Bc`, `Ge ≤ Gc`; 
 
 - production = Pc + Pb + Pg · consumption = Pc + Bc + Gc · ev = Pe + Be + Ge · house = consumption − ev
 - import = Gc + Gb · injection = Pg + Bg · battery charge = Pb + Gb · discharge = Bc + Bg
-- losses = charge − discharge: VRM books inverter idle use and conversion losses on the battery flows. Over a day or week it also contains energy still in the battery, so it is shown only for Lună and An.
+- losses = charge − discharge: VRM books inverter idle use and conversion losses on the battery flows. Over a day or week it also contains energy still in the battery: Zi and Săptămână subtract (SoC at the end − SoC at the start) × capacity, from HA's SoC statistics (`summary.py` still reports losses only for month and year).
 - independence = (Pc + Bc) / consumption · self-consumption = (Pc + Pb) / production
 
 Always build days from hourly points in local time (`bucket_hours`): VRM's own daily totals are shifted by a day after a DST change.
@@ -110,7 +110,7 @@ In the Claude desktop app, point `.claude/launch.json` at that command and use `
 
 ## Mașina view (EV charger)
 
-`view: masina` with `charger: <prefix>` (Victron EVCS entities from the core `victron_gx` integration: `sensor.<prefix>_status`, `_power`, `_current`, `_total_energy`, `_last_session_energy`, `_last_session_time`, `select.<prefix>_mode`, `switch.<prefix>_ev_charging`, `switch.<prefix>_auto_start`, `number.<prefix>_charge_current_setpoint`) and optionally `car: <prefix>` (`sensor.<prefix>_state_of_charge`, `_target_state_of_charge`, `_charging_state`); `entities:` overrides any single id. The live box re-renders only when one of those states changes (`_syncLive`), and the current stepper sends one `number.set_value` 800 ms after the last press. History comes from `victron_vrm/ev`; sessions are runs of consecutive hours with ≥ 0.05 kWh to the car, so their times are whole hours. Cost = grid kWh × that month's import price; savings = (solar + battery) kWh × the same price, matching Amortizare.
+`view: masina` with `charger: <prefix>` (Victron EVCS entities from the core `victron_gx` integration: `sensor.<prefix>_status`, `_power`, `_current`, `_total_energy`, `_last_session_energy`, `_last_session_time`, `select.<prefix>_mode`, `switch.<prefix>_ev_charging`, `switch.<prefix>_auto_start`, `number.<prefix>_charge_current_setpoint`) and optionally `car: <prefix>` (`sensor.<prefix>_state_of_charge`, `_target_state_of_charge`, `_charging_state`); `entities:` overrides any single id. The live box re-renders only when one of those states changes (`_syncLive`), and the current stepper (and the one-click currents 6–32 A under it) sends one `number.set_value` 800 ms after the last press. History comes from `victron_vrm/ev`; sessions are runs of consecutive hours with ≥ 0.05 kWh to the car, so their times are whole hours. Cost = grid kWh × that month's import price; savings = (solar + battery) kWh × the same price, matching Amortizare.
 
 ### EV energy from the charger's meter (`source: gx`)
 

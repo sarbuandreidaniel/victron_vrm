@@ -1,6 +1,6 @@
 /* victron-vrm-card — Zi / Săptămână / Lună / An din istoricul VRM salvat de integrarea victron_vrm */
 (() => {
-const VERSION = '0.21.4';
+const VERSION = '0.21.5';
 // casetele (C.panel = cea implicită din PANELS, sau transparente) stau pe fundalul temei; contrast față de cea mai deschisă (#464646): fg 9,3:1 · soft 5,8:1 · muted 4,5:1 (AA) · ctl 3,0:1 (marginea controalelor)
 const C = { page: '#0b0b0b', panel: '#3c3c3c', border: '#333333', fg: '#ffffff', soft: '#c7c7c7', muted: '#b5b5b5',
   ctl: '#939393', grid: '#2a2a2a', axis: '#4a4a4a', pop: '#262626', sel: '#3987e5', focus: '#5aa0f0' };
@@ -194,6 +194,10 @@ const EV_CHARTS = [
 ];
 const dur = (m) => (!isFinite(m) ? '—' : m < 60 ? `${F0(m)} min` : `${Math.floor(m / 60)} h ${p2(Math.round(m % 60))} min`);
 // bateria casei: entitățile victron_gx (implicit cele ale dispozitivului GX; `battery:` din configurație le poate înlocui)
+// capacitatea bateriei casei (kWh), când cardul nu are `capacity`
+const BAT_CAP = 20.24;
+// curenții de încărcare la un clic, ca în aplicația Victron
+const EV_AMPS = [6, 8, 10, 14, 16, 24, 32];
 const BAT_DEF = { soc: 'sensor.gx_device_dc_battery_charge', reserve: 'sensor.gx_device_active_soc_limit', mode: 'select.gx_device_ess_mode',
   minsoc: 'number.gx_device_ess_min_soc_limit', force: 'switch.ess_force_charge', maxI: 'number.gx_device_ess_max_charge_current',
   maxC: 'number.gx_device_ess_max_charge_power_limit', maxInv: 'number.gx_device_ess_max_inverter_power_limit', maxFeed: 'number.gx_device_ess_max_feed_in_power' };
@@ -438,7 +442,7 @@ const RAW_CSS = `
 .take{font-size:15px;line-height:1.6;color:${C.soft};margin-top:8px}
 .take b{color:${C.fg};font-weight:500}
 .sum{display:grid;grid-template-columns:auto auto 1fr;gap:12px 16px;align-items:center;margin-top:12px;max-width:880px;line-height:1.3}
-.sum .k{color:${C.muted};font-size:14px}
+.sum .k{color:${C.fg};font-size:17px;font-weight:500}
 .sum .n{color:${C.fg};font-size:17px;font-weight:500;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .sum .n small{color:${C.muted};font-size:13px;font-weight:400;margin-left:3px}
 .sum .r{min-width:0}
@@ -551,6 +555,11 @@ dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 .hlg{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:${C.muted}}.hlg i{display:block;width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,color-mix(in srgb, ${FLOW.Gc} 18%, transparent),${FLOW.Gc})}
 .srcs{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px;color:${C.muted}}.srcs .seg{margin-top:0}.srcs .seg button{min-height:32px;font-size:14px;padding:0 12px}
 .step{display:flex;align-items:center;gap:8px}
+.cg.amps{flex-basis:100%}
+.ev-amps{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:0;max-width:560px;border:1px solid ${C.ctl};border-radius:6px;overflow:hidden}
+.ev-amps button{border:0;border-radius:0;padding:0;min-height:40px;font-size:16px;font-variant-numeric:tabular-nums}
+.ev-amps button+button{border-left:1px solid ${C.grid}}
+.ev-amps button[aria-pressed="true"]{background:${C.sel};color:#fff}
 .step .tb{width:36px;height:36px;font:inherit;font-size:20px;color:${C.fg}}
 .step .tb:disabled{opacity:.35;cursor:default}
 .step span{min-width:52px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
@@ -890,8 +899,11 @@ class VictronVrmCard extends HTMLElement {
       // Lună / An: aceleași zile de anul trecut și estimarea la final de perioadă
       let px = null;
       if (v === 'luna' || v === 'an') { try { px = await this._periodExtra(v, from, to, t, info, rows, years); } catch (e) { px = null; } }
+      // Zi / Săptămână: pierderile au nevoie de starea bateriei la capetele perioadei
+      let lw = null;
+      if (v === 'zi' || v === 'saptamana') { try { lw = await this._lossWin(v, from, to, t, rows, live); } catch (e) { lw = null; } }
       if (seq !== this._seq) return;
-      this._info = info; this._rows = rows; this._years = years; this._px = px; this._err = null; this._fcOn = !!(fc && fc.fetched);
+      this._info = info; this._rows = rows; this._years = years; this._px = px; this._lw = lw; this._err = null; this._fcOn = !!(fc && fc.fetched);
     } catch (e) {
       if (seq !== this._seq) return;
       this._err = e && e.message ? e.message : String(e);
@@ -1105,12 +1117,15 @@ class VictronVrmCard extends HTMLElement {
     const kpi = (l, val, u, s = '') => `<div class="box kpi"><div class="l">${l}</div><div class="v">${val}<span class="u">${u}</span></div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
     const share = (x, of) => (of > 0 ? pct(x / of) : '—');
     const hasEv = tot.ev > 0;
-    // pierderile apar doar pe lună / an: pe zi sau săptămână ar include energia rămasă în baterie
-    const showLoss = v === 'luna' || v === 'an';
-    const hours = 24 * (v === 'an' ? rows.reduce((a, r) => a + (r.days || 0), 0) : n);
-    const lossW = hours > 0 ? tot.loss / hours * 1000 : NaN;
-    const take = `<div class="sum">${sumRow('Producție', kwU(tot.prod), [[tot.v.Pc, FLOW.Pc, 'consum direct'], [tot.v.Pb, FLOW.Pb, 'în baterie'], [tot.v.Pg, FLOW.Pg, 'în rețea']])}`
-      + sumRow(hasEv ? 'Casă' : 'Consum', kwU(tot.house), [[tot.v.hPc, FLOW.Pc, 'solar'], [tot.v.hBc, FLOW.Bc, 'baterie'], [tot.v.hGc, FLOW.Gc, 'rețea']])
+    // pe lună / an energia rămasă în baterie contează puțin; pe zi / săptămână o scădem din SoC (_lossWin)
+    const lw = (v === 'zi' || v === 'saptamana') ? this._lw : null;
+    const showLoss = v === 'luna' || v === 'an' || !!lw;
+    const loss = Math.max(0, tot.loss - (lw ? lw.stored : 0));
+    const hours = lw ? lw.hours : 24 * (v === 'an' ? rows.reduce((a, r) => a + (r.days || 0), 0) : n);
+    const lossW = hours > 0 ? loss / hours * 1000 : NaN;
+    const lossS = `≈ ${isFinite(lossW) ? F0(lossW) : '—'} W în medie · ${lw ? `SoC ${F0(lw.s0)} → ${F0(lw.s1)}%` : `${share(loss, tot.prod + tot.imp)} din energia intrată`}`;
+    const take = `<div class="sum">${sumRow(hasEv ? 'Casă' : 'Consum', kwU(tot.house), [[tot.v.hPc, FLOW.Pc, 'solar'], [tot.v.hBc, FLOW.Bc, 'baterie'], [tot.v.hGc, FLOW.Gc, 'rețea']])}`
+      + sumRow('Producție', kwU(tot.prod), [[tot.v.Pc, FLOW.Pc, 'consum direct'], [tot.v.Pb, FLOW.Pb, 'în baterie'], [tot.v.Pg, FLOW.Pg, 'în rețea']])
       + (hasEv ? sumRow('Mașina', kwU(tot.ev), [[tot.v.Pe, FLOW.Pc, 'solar'], [tot.v.Be, FLOW.Bc, 'baterie'], [tot.v.Ge, FLOW.Gc, 'rețea']]) : '')
       + (pl ? sumRow('Câștig', leiU(tot.gain), [[tot.v.eco, FLOW.eco, 'din autoconsum'], [tot.v.injv, FLOW.injv, 'din injecție']], v === 'zi' ? [] : [`Ø <b>${leiS(tot.gain / n)}</b> lei/${unit}`]) : '')
       + this._fcTake(rows, tot) + '</div>';
@@ -1134,7 +1149,7 @@ class VictronVrmCard extends HTMLElement {
     // totalurile de producție, casă și mașină sunt deja în rezumatul de sus
     const nk = 6 + (showLoss ? 1 : 0);
     w.innerHTML = nav + `
-<div class="kpis${nk % 2 ? ' odd' : ''}" style="--k:${nk}">${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', v === 'zi' ? `${kwh(tot.v.Bg)} kWh în rețea` : avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(Math.max(0, tot.loss)), 'kWh', `≈ ${isFinite(lossW) ? F0(Math.max(0, lossW)) : '—'} W în medie · ${share(Math.max(0, tot.loss), tot.prod + tot.imp)} din energia intrată`) : ''}${kpi('Independență', pctN(tot.indep), isFinite(tot.indep) ? '%' : '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pctN(tot.autoc), isFinite(tot.autoc) ? '%' : '', 'producție folosită în casă sau baterie')}</div>
+<div class="kpis${nk % 2 ? ' odd' : ''}" style="--k:${nk}">${kpi('Import rețea', kwh(tot.imp), 'kWh', `${kwh(tot.v.Gb)} kWh în baterie`)}${kpi('Injecție', kwh(tot.inj), 'kWh', `${kwh(tot.v.Bg)} kWh din baterie`)}${kpi('Încărcare baterie', kwh(tot.chg), 'kWh', `${kwh(tot.v.Gb)} kWh din rețea`)}${kpi('Descărcare baterie', kwh(tot.dis), 'kWh', v === 'zi' ? `${kwh(tot.v.Bg)} kWh în rețea` : avg(tot.dis))}${showLoss ? kpi('Pierderi sistem', kwh(loss), 'kWh', lossS) : ''}${kpi('Independență', pctN(tot.indep), isFinite(tot.indep) ? '%' : '', 'consum acoperit de solar + baterie')}${kpi('Autoconsum', pctN(tot.autoc), isFinite(tot.autoc) ? '%' : '', 'producție folosită în casă sau baterie')}</div>
 ${this._yoyHtml()}
 <div class="charts">${charts.map(box).join('')}</div>
 ${v === 'luna' ? this._heatHtml() : ''}
@@ -1361,7 +1376,8 @@ ${this._foot()}`;
     const ctl = [
       charging !== null ? `<div class="cg"><div class="l">Încărcare</div><button class="btn pri ev-go">${charging ? 'Oprește încărcarea' : 'Pornește încărcarea'}</button></div>` : '',
       mode !== null ? `<div class="cg"><div class="l">Mod</div><div class="seg ev-mode" role="group" aria-label="Modul stației">${EV_MODES.map(([k, l]) => `<button data-m="${k}" aria-pressed="${k === mode}">${l}</button>`).join('')}</div></div>` : '',
-      spx ? `<div class="cg"><div class="l">Curent de încărcare</div><div class="step"><button class="tb ev-dn" aria-label="Scade curentul"${shownA <= amin ? ' disabled' : ''}>−</button><span class="ev-a" aria-live="polite">${isFinite(shownA) ? F0(shownA) : '—'} A</span><button class="tb ev-up" aria-label="Crește curentul"${shownA >= amax ? ' disabled' : ''}>+</button></div></div>` : '',
+      spx ? `<div class="cg"><div class="l">Curent de încărcare</div><div class="step"><button class="tb ev-dn" aria-label="Scade curentul"${shownA <= amin ? ' disabled' : ''}>−</button><span class="ev-a" aria-live="polite">${isFinite(shownA) ? F0(shownA) : '—'} A</span><button class="tb ev-up" aria-label="Crește curentul"${shownA >= amax ? ' disabled' : ''}>+</button></div></div>`
+        + `<div class="cg amps"><div class="seg ev-amps" role="group" aria-label="Curent de încărcare">${EV_AMPS.filter((a) => a >= amin && a <= amax).map((a) => `<button data-a="${a}" aria-pressed="${a === shownA}">${a}</button>`).join('')}</div></div>` : '',
       auto !== null ? `<div class="cg"><div class="l">Pornire la conectare</div><button class="sw ev-auto" role="switch" aria-checked="${auto}" aria-label="Pornire automată când conectezi mașina"></button></div>` : '',
     ].join('');
     return `<div class="box live">
@@ -1397,13 +1413,14 @@ ${this._foot()}`;
     });
     // curentul se trimite după o scurtă pauză, ca apăsările repetate să ajungă ca o singură comandă
     const spx = this._hass.states[E.setpoint];
-    const step = (d) => {
+    const step = (d, abs) => {
       const amin = spx && isFinite(+spx.attributes.min) ? +spx.attributes.min : 6, amax = spx && isFinite(+spx.attributes.max) ? +spx.attributes.max : 32;
       const base = this._evA != null ? this._evA : parseFloat(spx && spx.state);
-      if (!isFinite(base)) return;
-      this._evA = Math.max(amin, Math.min(amax, base + d));
+      if (!isFinite(base) && abs == null) return;
+      this._evA = Math.max(amin, Math.min(amax, abs != null ? abs : base + d));
       box.querySelector('.ev-a').textContent = `${F0(this._evA)} A`;
       box.querySelector('.ev-dn').disabled = this._evA <= amin; box.querySelector('.ev-up').disabled = this._evA >= amax;
+      box.querySelectorAll('.ev-amps button').forEach((x) => x.setAttribute('aria-pressed', +x.dataset.a === this._evA));
       clearTimeout(this._evT);
       this._evT = setTimeout(() => {
         const value = this._evA;
@@ -1413,6 +1430,7 @@ ${this._foot()}`;
     const dn = box.querySelector('.ev-dn'), up = box.querySelector('.ev-up');
     if (dn) dn.addEventListener('click', () => step(-1));
     if (up) up.addEventListener('click', () => step(1));
+    box.querySelectorAll('.ev-amps button').forEach((b) => b.addEventListener('click', () => step(0, +b.dataset.a)));
   }
   // HA trimite `hass` la fiecare schimbare; redesenăm doar caseta live, și doar când s-a schimbat ceva de-al ei
   _syncLive(force = false) {
@@ -1558,6 +1576,43 @@ ${gx ? this._gxCmp(from, to, price(ym(from))) : ''}
     this._cws = {}; this._charts();
   }
 
+  // Pe o zi sau o săptămână, încărcare − descărcare cuprinde și energia rămasă în baterie: o scădem,
+  // din SoC-ul de la începutul și de la sfârșitul datelor VRM (statisticile HA, la 5 minute sau la oră)
+  async _lossWin(v, from, to, t, rows, live) {
+    const lastH = (rs) => rs.reduce((a, r, i) => (r.any ? i + 1 : a), 0);
+    let end;
+    if (v === 'zi') end = new Date(from.getFullYear(), from.getMonth(), from.getDate(), lastH(rows));
+    else if (!live) end = addDays(to, 1);
+    else {
+      const r = await this._ws({ type: 'victron_vrm/hours', date: iso(t) }, true);
+      const h = lastH(Array.from({ length: 24 }, (_, i) => mk(p2(i), r.hours[p2(i)], r.codes)));
+      end = new Date(t.getFullYear(), t.getMonth(), t.getDate(), h);
+    }
+    if (!(end > from)) return null;
+    const s0 = await this._socAt(from), s1 = await this._socAt(end);
+    if (!isFinite(s0) || !isFinite(s1)) return null;
+    const capK = +this._cfg.capacity > 0 ? +this._cfg.capacity : BAT_CAP;
+    return { s0, s1, stored: (s1 - s0) / 100 * capK, hours: (end - from) / 3.6e6 };
+  }
+  // SoC-ul la momentul x: media dintre intervalul dinainte și cel de după (5 minute cât există, altfel o oră)
+  async _socAt(x) {
+    const id = this._batEnt().soc, key = `socAt|${id}|${+x}`, hit = this._cache.get(key);
+    if (hit && isFinite(hit.data)) return hit.data;
+    const ago = Date.now() - x;
+    let val = NaN;
+    for (const step of ago < 9 * 864e5 ? [3e5, 36e5] : [36e5]) {
+      try {
+        const r = await this._hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(+x - step).toISOString(),
+          end_time: new Date(+x + step).toISOString(), statistic_ids: [id], period: step === 3e5 ? '5minute' : 'hour', types: ['mean'], units: { unitless: '%' } });
+        const m = ((r && r[id]) || []).map((q) => +q.mean).filter(isFinite);
+        if (m.length) { val = m.reduce((a, c) => a + c, 0) / m.length; break; }
+      } catch (e) { val = NaN; }
+    }
+    // capătul de acum: statisticile nu s-au strâns încă, starea curentă e cea mai apropiată
+    if (!isFinite(val) && ago < 15 * 6e4) { const sx = this._hass.states[id]; val = sx ? parseFloat(sx.state) : NaN; }
+    this._cache.set(key, { at: Date.now(), data: val });
+    return val;
+  }
   // ── bateria: starea acum, setările ESS și istoricul încărcărilor ─────
   _batEnt() { return Object.assign({}, BAT_DEF, this._cfg.battery || {}); }
   _batKey() {
